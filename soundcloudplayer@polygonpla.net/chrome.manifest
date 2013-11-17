@@ -1,0 +1,6 @@
+content  soundcloudplayer                    chrome/content/
+skin     soundcloudplayer  classic/1.0       chrome/skin/
+overlay  chrome://browser/content/browser.xul         chrome://soundcloudplayer/content/player.xul
+style    chrome://global/content/customizeToolbar.xul chrome://soundcloudplayer/skin/player.css
+locale   soundcloudplayer  en-US             chrome/locale/en-US/
+locale   soundcloudplayer  ja-JP             chrome/locale/ja-JP/

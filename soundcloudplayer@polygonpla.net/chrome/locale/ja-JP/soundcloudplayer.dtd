@@ -1,0 +1,18 @@
+<!ENTITY soundcloudplayer-overlay "SoundCloudPlayer">
+
+<!ENTITY label.Like "Like">
+<!ENTITY label.Liked "Liked">
+
+<!ENTITY label.PreviousTrack "前のトラック">
+<!ENTITY label.Play "再生">
+<!ENTITY label.Pause "一時停止">
+<!ENTITY label.NextTrack "次のトラック">
+
+<!ENTITY label.CurrentTitle "トラックタイトル">
+
+<!ENTITY label.Mute "ミュート">
+<!ENTITY label.Unmute "ミュート解除">
+<!ENTITY label.Volume "ボリューム">
+
+<!ENTITY label.OpenSoundCloud "SoundCloudを開く">
+

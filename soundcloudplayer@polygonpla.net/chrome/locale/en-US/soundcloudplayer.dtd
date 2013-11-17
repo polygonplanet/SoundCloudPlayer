@@ -1,0 +1,19 @@
+<!ENTITY soundcloudplayer-overlay "SoundCloudPlayer">
+
+<!ENTITY label.Like "Like">
+<!ENTITY label.Liked "Liked">
+
+<!ENTITY label.PreviousTrack "Previous Track">
+<!ENTITY label.Play "Play">
+<!ENTITY label.Pause "Pause">
+<!ENTITY label.NextTrack "Next Track">
+
+<!ENTITY label.CurrentTitle "Current Title">
+
+<!ENTITY label.Mute "Mute">
+<!ENTITY label.Unmute "Unmute">
+<!ENTITY label.Volume "Volume">
+
+<!ENTITY label.OpenSoundCloud "Open SoundCloud">
+
+
