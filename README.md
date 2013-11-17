@@ -1,7 +1,7 @@
 SoundCloudPlayer
 ================
 
-Conrol SoundCloud player from Mozilla Firefox statusbar.
+Control SoundCloud player from Mozilla Firefox statusbar.
 
 ### [SoundCloudPlayer :: Add-ons for Firefox][1]
 
