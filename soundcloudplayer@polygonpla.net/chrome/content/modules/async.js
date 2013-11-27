@@ -18,9 +18,9 @@ var Deferred = (function() {
       FIRED   = 2,
       UNFIRED = 3;
 
-  function Deferred(canceller) {
+  var Deferred = function(canceller) {
     return this.init.apply(this, arguments);
-  }
+  };
 
   Deferred.prototype = {
     Deferred: Deferred,
@@ -28,6 +28,7 @@ var Deferred = (function() {
     state: UNFIRED,
     paused: 0,
     chained: false,
+    cancelled: false,
     unhandledErrorTimerId: null,
 
     init: function(canceller) {
@@ -38,16 +39,19 @@ var Deferred = (function() {
     },
 
     cancel: function() {
-      if (this.state === UNFIRED) {
-        this.canceller && this.canceller.apply(this, arguments);
-      } else if (this.state === FIRED && isDeferred(this.results[SUCCESS])) {
-        this.results[SUCCESS].cancel.apply(this, arguments);
+      if (!this.cancelled) {
+        this.cancelled = true;
+        if (this.state === UNFIRED) {
+          this.canceller && this.canceller.apply(this, arguments);
+        } else if (this.state === FIRED && isDeferred(this.results[SUCCESS])) {
+          this.results[SUCCESS].cancel.apply(this, arguments);
+        }
       }
       return this;
     },
 
     then: function(callback, errback) {
-      if (!this.chained) {
+      if (!this.chained && !this.cancelled) {
         this.chain.push([callback, errback]);
 
         if (isFireable(this.state)) {
@@ -70,43 +74,54 @@ var Deferred = (function() {
       var args = Array.slice(arguments, 1);
       args.unshift(error(res));
       return prepare.apply(this, args);
+    },
+    end: function() {
+      this.chained = true;
+      return this;
     }
   };
 
-  var p = Deferred.prototype;
-  mixin(p, {
-    addCallbacks : p.then,
-    addCallback  : p.then,
-    addErrback   : p.rescue,
-    addBoth      : p.ensure,
-    callback     : p.begin,
-    errback      : p.raise
-  });
+  (function(p) {
+    mixin(p, {
+      addCallbacks : p.then,
+      addCallback  : p.then,
+      addErrback   : p.rescue,
+      addBoth      : p.ensure,
+      callback     : p.begin,
+      errback      : p.raise
+    });
+  }(Deferred.prototype));
 
   Deferred.isDeferred = isDeferred;
+  Deferred.isChainable = isChainable;
 
 
-  function isDeferred(d) {
+  var isDeferred = function(d) {
     return d != null && d.Deferred === Deferred;
-  }
+  };
 
 
-  function isFireable(state) {
+  var isChainable = function(x) {
+    return isDeferred(x) && !x.chained && !x.cancelled;
+  };
+
+
+  var isFireable = function(state) {
     return !!(state ^ UNFIRED);
-  }
+  };
 
 
-  function error(e) {
+  var error = function(e) {
     return isError(e) ? e : new Error(e);
-  }
+  };
 
 
-  function setState(res) {
+  var setState = function(res) {
     this.state = isError(res) ? FAILURE : SUCCESS;
-  }
+  };
 
 
-  function hasErrback() {
+  var hasErrback = function() {
     var chain = this.chain;
     for (var i = 0, len = chain.length; i < len; i++) {
       if (chain[i] && isFunction(chain[i][1])) {
@@ -114,17 +129,17 @@ var Deferred = (function() {
       }
     }
     return false;
-  }
+  };
 
 
-  function prepare(res) {
+  var prepare = function(res) {
     setState.call(this, res);
     this.results[this.state] = res;
     return fire.call(this);
-  }
+  };
 
 
-  function fire() {
+  var fire = function() {
     var that = this;
     var chain = this.chain;
     var res = this.results[this.state];
@@ -135,7 +150,7 @@ var Deferred = (function() {
       delete this.unhandledErrorTimerId;
     }
 
-    while (chain.length && !this.paused) {
+    while (chain.length && !this.paused && !this.cancelled) {
       fn = chain.shift()[this.state];
 
       if (!fn) {
@@ -184,16 +199,19 @@ var Deferred = (function() {
       }, 0);
     }
     return this;
-  }
+  };
 
   return Deferred;
 
-})();
+}());
 
 var isDeferred = Deferred.isDeferred;
+var isChainable = Deferred.isChainable;
 
 
 // Call the function in the background (i.e. in non-blocking)
+// Code from lazyIter.js
+//XXX: Use MutationObserver for fast calling.
 var lazy = (function() {
   var byTick = (function() {
     if (typeof process === 'object' && typeof process.nextTick === 'function') {
@@ -323,10 +341,9 @@ function async(fn) {
   } else {
     v = fn;
   }
-  lazy(function() {
+  return lazy(function() {
     d.begin(v);
-  });
-  return d;
+  }), d;
 }
 
 mixin(async, {
@@ -412,7 +429,7 @@ mixin(async, {
       delay = 13;
     }
 
-    function observing() {
+    return async(function observing() {
       var time = Date.now();
 
       try {
@@ -421,10 +438,7 @@ mixin(async, {
           throw StopIteration;
         }
         var interval = Math.min(1500, delay + (Date.now() - time));
-
-        timer.set(function() {
-          observing();
-        }, interval);
+        timer.set(observing, interval);
 
       } catch (e) {
         timer.clearAll();
@@ -435,9 +449,7 @@ mixin(async, {
           d.raise(e);
         }
       }
-    }
-    async(observing);
-    return d;
+    }), d;
   },
 
   till: function(cond, max) {
@@ -452,7 +464,7 @@ mixin(async, {
     var timer = new Timer();
     var startTime = Date.now();
 
-    function tilling() {
+    return async(function tilling() {
       try {
         if (end) {
           timer.clearAll();
@@ -505,9 +517,7 @@ mixin(async, {
           d.begin(false);
         }
       }
-    }
-    async(tilling);
-    return d;
+    }), d;
   }
 });
 

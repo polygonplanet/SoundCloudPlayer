@@ -6,17 +6,51 @@
 
 var SoundCloudPlayer = {
   BASE_URL: 'https://soundcloud.com/',
+  RE_BASE_URL: new RegExp('^https?://soundcloud\\.com/'),
 
-  statusbarItems: {
-    //TODO: play time
-    'soundcloudplayer-control-like'          : 'commandLike',
-    'soundcloudplayer-control-prev'          : 'commandPrev',
-    'soundcloudplayer-control-toggle'        : 'commandToggle',
-    'soundcloudplayer-control-next'          : 'commandNext',
-    'soundcloudplayer-control-title'         : 'commandTitle',
-    'soundcloudplayer-control-volume'        : 'commandVolume',
-    'soundcloudplayer-control-volume-slider' : 'commandVolumeSlider',
-    'soundcloudplayer-control-open'          : 'commandOpen'
+  playerElements: {
+    //TODO:
+    // - Playback progress bar
+    // - Repost button
+    'soundcloudplayer-control-like': {
+      removable: true,
+      command: 'commandLike'
+    },
+    'soundcloudplayer-control-prev': {
+      removable: true,
+      command: 'commandPrev'
+    },
+    'soundcloudplayer-control-toggle': {
+      removable: true,
+      command: 'commandToggle'
+    },
+    'soundcloudplayer-control-next': {
+      removable: true,
+      command: 'commandNext'
+    },
+    'soundcloudplayer-control-title': {
+      removable: true,
+      command: 'commandTitle'
+    },
+    'soundcloudplayer-control-title-text': {
+      removable: false,
+      command: null,
+    },
+    'soundcloudplayer-control-volume': {
+      removable: true,
+      command: 'commandVolume'
+    },
+    'soundcloudplayer-control-volume-slider-wrapper': {
+      removable: true,
+      command: null
+    },
+    'soundcloudplayer-control-volume-slider': {
+      removable: false
+    },
+    'soundcloudplayer-control-open': {
+      removable: true,
+      command: 'commandOpen'
+    }
   },
   playControlClasses: {
     prev: {
@@ -50,7 +84,7 @@ var SoundCloudPlayer = {
   },
   elements: null,
 
-  //XXX: calc positions
+  //XXX: Fix slider positions
   VOLUME_SLIDER_POSITIONS: [0, 10, 15, 18, 22, 26, 30, 34, 37, 41, 48, 53],
   VOLUME_SLIDER_WIDTH: 53,
 
@@ -71,9 +105,10 @@ var SoundCloudPlayer = {
 
   header: null,
   interval: 1000,
+  closing: false,
   observing: false,
   stopObserve: false,
-  playerAvailable: false,
+  playerEnabled: false,
   ignoreFindPage: false,
   isSliderChanging: false,
   ignoreVolumeSettings: false,
@@ -84,39 +119,24 @@ var SoundCloudPlayer = {
   restoreSetVolume: null,
 
   init: function() {
-    var inited = getPref('inited');
-    var likeInited = getPref('likeInited');
-    var bar = document.getElementById('addon-bar');
+    if (!getPref('playerInstalled')) {
+      var bar = document.getElementById('addon-bar');
 
-    if (bar) {
-      var cur = bar.currentSet;
-      var addButton = function(id, next) {
-        if (!~cur.indexOf(id)) {
-          if (next) {
-            cur = cur.split(next).join(id + ',' + next);
-          } else {
-            cur = cur.concat(',' + id);
-          }
-          bar.currentSet = cur;
-          bar.setAttribute('currentset', cur);
-          document.persist(bar.id, 'currentset');
-        }
-      };
+      if (bar) {
+        var cur = bar.currentSet;
+        var elems = this.playerElements;
 
-      if (!inited) {
-        Object.keys(this.statusbarItems).forEach(function(id) {
-          if (/-slider$/.test(id)) {
-            id += '-wrapper';
+        // Remove the old SoundCloudPlayer version's <toolbarbutton/>
+        Object.keys(elems).forEach(function(id) {
+          if (elems[id].removable && ~cur.indexOf(id)) {
+            cur = cur.split(new RegExp('(?:,|)' + id)).join('');
           }
-          addButton(id);
         });
-        setPref('inited', true);
-      }
+        bar.currentSet = cur.concat(',soundcloudplayer-player');
+        bar.setAttribute('currentset', cur);
+        document.persist(bar.id, 'currentset');
 
-      if (!likeInited) {
-        var keys = Object.keys(this.statusbarItems);
-        addButton.apply(this, keys);
-        setPref('likeInited', true);
+        setPref('playerInstalled', true);
       }
     }
     this.initVolume();
@@ -144,25 +164,13 @@ var SoundCloudPlayer = {
       try {
         window.addEventListener('load', function() {
           that.init();
-
-          gBrowser.addEventListener('load', function() {
-            that.onTabLoad.apply(that, arguments);
-          }, true);
-
-          var tabContainer = gBrowser.tabContainer;
-
-          tabContainer.addEventListener('TabSelect', function() {
-            that.onTabSelect.apply(that, arguments);
-          }, false);
-
-        }, false);
-
-        window.addEventListener('aftercustomization', function() {
-          that.init();
+          gBrowser.addEventListener('load', that.onTabLoad.bind(that), true);
+          gBrowser.tabContainer.addEventListener('TabSelect', that.onTabSelect.bind(that), false);
         }, false);
 
         window.addEventListener('close', function() {
           if (that) {
+            that.closing = true;
             that.stopObserve = true;
           }
         }, false);
@@ -176,26 +184,21 @@ var SoundCloudPlayer = {
     if (this.elements) {
       return;
     }
-    var that = this;
-    var items = this.statusbarItems;
+    var elems = this.playerElements;
 
     this.elements = {};
 
-    Object.keys(items).forEach(function(id) {
-      var method = items[id];
+    Object.keys(elems).forEach(function(id) {
+      var elem = document.getElementById(id);
+      var command = elems[id].command;
 
-      if (method !== null) {
-        var elem = document.getElementById(id);
-
-        if (!/volume-slider/.test(id)) {
-          elem.addEventListener('command', function() {
-            that[method]();
-          }, false);
+      if (elem) {
+        this.elements[id.split('-').pop()] = elem;
+        if (command) {
+          elem.addEventListener('command', this[command].bind(this), false);
         }
-
-        that.elements[id.split('-').pop()] = elem;
       }
-    });
+    }, this);
   },
   addVolumeSliderEvents: (function() {
     var inited = false;
@@ -204,34 +207,22 @@ var SoundCloudPlayer = {
       if (inited) {
         return;
       }
-      var that = this;
       var slider = this.elements.slider;
+
+      var changeSlider = (function(blur) {
+        this.isSliderChanging = true;
+        blur && slider.blur && slider.blur();
+      }).bind(this);
+
+      var changeSliderBlur = partial(changeSlider, true);
 
       if (slider) {
         try {
-          slider.addEventListener('input', function() {
-            that.commandVolumeSliderInput();
-          }, false);
-
-          slider.addEventListener('change', function() {
-            that.commandVolumeSliderChanging();
-          }, false);
-
-          slider.addEventListener('mousedown', function() {
-            that.isSliderChanging = true;
-          }, false);
-
-          slider.addEventListener('mouseup', function() {
-            that.isSliderChanging = false;
-            slider.blur();
-          }, false);
-
-          slider.addEventListener('mouseleave', function() {
-            that.isSliderChanging = false;
-            slider.blur();
-          }, false);
-
-          that.isSliderChanging = false;
+          slider.addEventListener('input', this.commandVolumeSliderInput.bind(this), false);
+          slider.addEventListener('change', this.commandVolumeSliderChanging.bind(this), false);
+          slider.addEventListener('mousedown', changeSlider, false);
+          slider.addEventListener('mouseup', changeSliderBlur, false);
+          slider.addEventListener('mouseleave', changeSliderBlur, false);
         } finally {
           inited = true;
         }
@@ -300,22 +291,24 @@ var SoundCloudPlayer = {
   },
 
   isPlaying: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     //XXX: playManager.isPlaying
-    return hasClass(this.playControl, 'playing');
+    return this.playControl.classList.contains('playing');
   },
+  //TODO: Reduce function initial check
   play: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     if (!this.isPlaying()) {
+      //XXX: Use SoundCloud modules
       this.click(this.playControl);
     }
   },
   stop: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     if (this.isPlaying()) {
@@ -323,51 +316,41 @@ var SoundCloudPlayer = {
     }
   },
   toggle: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     this.click(this.playControl);
   },
   prev: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     this.click(this.skipControlPrevious);
   },
   next: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     this.click(this.skipControlNext);
   },
 
   getTitle: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
     return ('' + this.playbackTitle.textContent).trim();
   },
   navigate: function(path) {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
-
-    try {
-      this.window.require('config').get('router').navigate(path, true);
-    } catch (e) {
-      error(e);
-    }
+    this.window.require('config').get('router').navigate(path, true);
   },
   getCurrentSound: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
-
-    try {
-      return this.window.require('lib/play-manager').getCurrentSound();
-    } catch (e) {
-      error(e);
-    }
+    return this.window.require('lib/play-manager').getCurrentSound();
   },
   getCurrentPermalink: function() {
     var sound = this.getCurrentSound();
@@ -376,32 +359,22 @@ var SoundCloudPlayer = {
     }
   },
   getConfig: function(key) {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
-    try {
-      return this.window.require('config').get(key);
-    } catch (e) {
-      error(e);
-    }
+    return this.window.require('config').get(key);
   },
   isLiked: function(sound) {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
-    try {
-      var id = sound.id;
-      var SoundLikes = this.window.require('models/sound-likes');
-      var sl = new SoundLikes();
-      return sl.get(id);
-    } catch (e) {
-      error(e);
-    }
+    var SoundLikes = this.window.require('models/sound-likes');
+    return new SoundLikes().get(sound.id);
   },
   like: function(sound) {
     var d = new Deferred();
 
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return d.raise();
     }
 
@@ -431,41 +404,31 @@ var SoundCloudPlayer = {
     return '';
   },
   getCurrentVolume: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
 
     if (this.currentVolume != null) {
       return this.currentVolume;
     }
-
-    try {
-      return this.window.require('lib/audiomanager')._volume;
-    } catch (e) {
-      error(e);
-    }
+    return this.window.require('lib/audiomanager')._volume;
   },
   setCurrentTitle: function() {
     var title = this.getCurrentTitle();
 
-    if (title != null && this.elements.title) {
-      this.elements.title.setAttribute('label', title);
-      this.elements.title.setAttribute('tooltiptext', title);
+    if (title != null && this.elements) {
+      var elemTitle = this.elements.title;
+      var elemText = this.elements.text;
 
-      var stack = this.elements.title.childNodes[0];
-      if (stack && typeof stack.textContent !== 'undefined') {
-        stack.textContent = title;
+      if (!elemTitle.disabled) {
+        elemTitle.setAttribute('label', title);
+        elemTitle.setAttribute('tooltiptext', title);
+        elemText.textContent = title;
       }
     }
   },
   getElementTitle: function() {
-    if (this.elements.title) {
-      var stack = this.elements.title.childNodes[0];
-      if (stack && typeof stack.textContent !== 'undefined') {
-        return ('' + stack.textContent).trim();
-      }
-    }
-    return '';
+    return this.elements ? ('' + this.elements.text.textContent).trim() : '';
   },
   setCurrentVolume: function() {
     if (this.ignoreVolumeSettings) {
@@ -490,7 +453,7 @@ var SoundCloudPlayer = {
     }
   },
   setVolume: function(vol) {
-    if (!this.isPlayControlAvailable() || this.ignoreVolumeSettings) {
+    if (!this.isPlayControlEnabled() || this.ignoreVolumeSettings) {
       return;
     }
     this.currentVolume = vol;
@@ -502,113 +465,90 @@ var SoundCloudPlayer = {
         this.moveVolumeSliderHandle(vol);
       }
     } else {
-      if (!this.isMute) {
-        try {
-          this.window.require('lib/audiomanager').setVolume(vol);
-          this.setVolumeStore(vol);
-        } catch (e) {
-          error(e);
-        }
+      if (!this.isMute && this.isDocumentEnabled()) {
+        this.window.require('lib/audiomanager').setVolume(vol);
+        this.setVolumeStore(vol);
       }
     }
   },
   setVolumeStore: function(vol, isMute) {
-    if (!this.isPlayControlAvailable()) {
-      return;
+    if (!this.isPlayControlEnabled()) {
+      return false;
     }
 
-    try {
-      var volume = Math.min(1, Math.max(0, (vol - 0) || 0));
-      var PersistentStore = this.window.require('lib/persistent-store');
-      var volumeSettings = new PersistentStore('volume-settings');
-      volumeSettings.set('volume', volume);
+    var volume = Math.min(1, Math.max(0, (vol - 0) || 0));
+    var PersistentStore = this.window.require('lib/persistent-store');
+    var volumeSettings = new PersistentStore('volume-settings');
+    volumeSettings.set('volume', volume);
 
-      if (!this.isMute && !isMute) {
-        setPref('volume', ~~(volume * 10));
-      }
-
-      return true;
-    } catch (e) {
-      error(e);
+    if (!this.isMute && !isMute) {
+      setPref('volume', ~~(volume * 10)|0);
     }
+    return true;
   },
   toggleMute: function() {
-    if (this.ignoreVolumeSettings || !this.isPlayControlAvailable()) {
-      return;
+    if (this.ignoreVolumeSettings || !this.isPlayControlEnabled()) {
+      return false;
     }
+    var audioManager = this.window.require('lib/audiomanager');
 
-    try {
-      var audioManager = this.window.require('lib/audiomanager');
+    if (this.isMute) {
+      audioManager.setVolume(this.currentVolume);
+      this.setVolumeStore(this.currentVolume);
 
-      if (this.isMute) {
-        audioManager.setVolume(this.currentVolume);
-        this.setVolumeStore(this.currentVolume);
-
-        if (this.elements.volume) {
-          removeClass(this.elements.volume, 'mute');
-          setLabel(this.elements.volume, 'Mute');
-        }
-        if (this.elements.slider) {
-          this.elements.slider.value = this.currentVolume * 10;
-        }
-
-        if (this.isVolumeSliderEnabled()) {
-          this.moveVolumeSliderHandle(this.currentVolume);
-        }
-      } else {
-        audioManager.setVolume(0);
-        this.setVolumeStore(0, true);
-
-        if (this.elements.volume) {
-          addClass(this.elements.volume, 'mute');
-          setLabel(this.elements.volume, 'Unmute');
-        }
-        if (this.elements.slider) {
-          this.elements.slider.value = 0;
-        }
-
-        if (this.isVolumeSliderEnabled()) {
-          this.muteSlider();
-        }
+      if (this.elements.volume) {
+        this.elements.volume.classList.remove('mute');
+        setLabel(this.elements.volume, 'Mute');
+      }
+      if (this.elements.slider) {
+        this.elements.slider.value = this.currentVolume * 10;
       }
 
-      this.isMute = !this.isMute;
-      this.isMuteInited = true;
-      setPref('muted', this.isMute);
+      if (this.isVolumeSliderEnabled()) {
+        this.moveVolumeSliderHandle(this.currentVolume);
+      }
+    } else {
+      audioManager.setVolume(0);
+      this.setVolumeStore(0, true);
 
+      if (this.elements.volume) {
+        this.elements.volume.classList.add('mute');
+        setLabel(this.elements.volume, 'Unmute');
+      }
+      if (this.elements.slider) {
+        this.elements.slider.value = 0;
+      }
+
+      if (this.isVolumeSliderEnabled()) {
+        this.muteSlider();
+      }
+    }
+
+    this.isMute = !this.isMute;
+    this.isMuteInited = true;
+    setPref('muted', this.isMute);
+
+    return true;
+  },
+  toggleSliderMute: function() {
+    if (this.ignoreVolumeSettings || !this.isPlayControlEnabled()) {
+      return;
+    }
+    var button = this.headerVolume.querySelector('.volume__togglemute');
+    if (button) {
+      this.click(button);
       return true;
-    } catch (e) {
-      error(e);
     }
     return false;
   },
-  toggleSliderMute: function() {
-    if (this.ignoreVolumeSettings || !this.isPlayControlAvailable()) {
-      return;
-    }
-
-    try {
-      var button = this.headerVolume.querySelector('.volume__togglemute');
-      if (button) {
-        this.click(button);
-        return true;
-      }
-    } catch (e) {
-      error(e);
-    }
-  },
   isSliderMuted: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
 
-    try {
-      var volume = this.headerVolume.querySelector('.volume');
-      if (volume && hasClass(volume, 'muted')) {
-        return true;
-      }
-    } catch (e) {
-      error(e);
+    var volume = this.headerVolume.querySelector('.volume');
+    if (volume && volume.classList.contains('muted')) {
+      return true;
     }
     return false;
   },
@@ -619,25 +559,29 @@ var SoundCloudPlayer = {
     return this.isSliderMuted() ? true : this.toggleSliderMute();
   },
   setMute: function() {
-    if (this.ignoreVolumeSettings || !this.isPlayControlAvailable()) {
+    if (this.ignoreVolumeSettings || !this.isPlayControlEnabled()) {
       return;
     }
 
-    try {
-      var audioManager = this.window.require('lib/audiomanager');
+    var audioManager = this.window.require('lib/audiomanager');
 
-      audioManager.setVolume(0);
-      this.setVolumeStore(0);
-      this.muteSlider();
+    audioManager.setVolume(0);
+    this.setVolumeStore(0);
+    this.muteSlider();
 
-      if (this.elements.volume) {
-        addClass(this.elements.volume, 'mute');
-        setLabel(this.elements.volume, 'Unmute');
-      }
-    } catch (e) {
-      error(e);
+    if (this.elements.volume) {
+      this.elements.volume.classList.add('mute');
+      setLabel(this.elements.volume, 'Unmute');
     }
   },
+  // Bug? or problems on SoundCloud's SoundManager2:
+  //
+  // 1) Play any sound, then mutes by volume button.
+  // 2) Open new SoundCloud tab, then play any sound.
+  // A moment sound would come out.
+  //
+  // Resolve/Fix this problem.
+  //XXX: __proto__
   addVolumeTrapper: function() {
     var that = this;
 
@@ -664,10 +608,10 @@ var SoundCloudPlayer = {
           };
 
           audioManager.__proto__.setVolume = function(vol) {
-            if (that.isMute) {
-              return 0;
-            }
             try {
+              if (that.isMute) {
+                return setVolume_.call(this, 0);
+              }
               return setVolume_.apply(this, arguments);
             } finally {
               if (that.restoreSetVolume) {
@@ -677,48 +621,86 @@ var SoundCloudPlayer = {
           };
         } catch (e) {
           error(e);
+          throw e;
         }
       }
     }
   },
   togglePlay: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return;
     }
 
-    try {
-      this.window.require('lib/play-manager').toggleCurrent({
-        userInitiated: true
-      });
+    this.window.require('lib/play-manager').toggleCurrent({
+      userInitiated: true
+    });
 
-      this.setToggleClass();
-    } catch (e) {
-      error(e);
-    }
+    this.togglePlaying();
   },
   openSoundCloud: function() {
-    if (this.isDocumentAvailable()) {
+    if (this.isDocumentEnabled()) {
       this.tabbrowser.selectedTab = this.tab;
     } else {
       addTab(this.BASE_URL);
     }
   },
-  setToggleClass: function() {
-    var isPlaying = false;
+  togglePlayerDisabled: (function() {
+    var prev = null;
+
+    return function() {
+      if (this.elements) {
+        var enabled = !!this.isPlayControlEnabled();
+
+        if (prev !== enabled) {
+          var elems = this.elements;
+
+          Object.keys(elems).forEach(function(key) {
+            var elem = elems[key];
+
+            switch (key) {
+              case 'open':
+                  return;
+              case 'title':
+                  if (!enabled) {
+                    setLabel(elem, 'NotFoundSoundCloud');
+                  }
+                  break;
+              case 'text':
+                  if (!enabled) {
+                    elem.textContent = '----------';
+                  }
+                  break;
+              case 'slider':
+                  if (enabled) {
+                    elem.removeAttribute('disabled');
+                  } else {
+                    elem.setAttribute('disabled', 'true');
+                  }
+                  return;
+            }
+            elem.disabled = !enabled;
+          });
+        }
+        prev = enabled;
+      }
+    };
+  }()),
+  togglePlaying: function() {
+    var playing = false;
     if (this.elements && this.elements.toggle) {
       if (this.isPlaying()) {
-        addClass(this.elements.toggle, 'playing');
+        this.elements.toggle.classList.add('playing');
         setLabel(this.elements.toggle, 'Pause');
-        isPlaying = true;
+        playing = true;
       } else {
-        removeClass(this.elements.toggle, 'playing');
+        this.elements.toggle.classList.remove('playing');
         setLabel(this.elements.toggle, 'Play');
       }
     }
-    return isPlaying;
+    return playing;
   },
   setLikedClass: function() {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
 
@@ -729,149 +711,130 @@ var SoundCloudPlayer = {
         var liked = this.isLiked(sound);
 
         if (liked) {
-          addClass(this.elements.like, 'liked');
+          this.elements.like.classList.add('liked');
           setLabel(this.elements.like, 'Liked');
         } else {
-          removeClass(this.elements.like, 'liked');
+          this.elements.like.classList.remove('liked');
           setLabel(this.elements.like, 'Like');
         }
       }
     }
   },
   findTab: function() {
-    try {
-      var page = this.findPage();
-      if (page) {
+    var page = this.findPage();
+    if (page) {
 
+      var header = this.getHeader(page.document);
+      if (header) {
+
+        if (this.isMute) {
+          this.setMute();
+        }
+
+        mixin(this, page);
+        if (this.isDocumentEnabled()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+  findPage: function(onlyPlaying) {
+    var pages = getPages(this.isSoundCloudPage.bind(this));
+    if (pages) {
+      var page = this.getPlayingPage(pages);
+
+      if (!onlyPlaying && !page) {
+        page = pages[0];
+      }
+
+      if (page && page.window) {
+        page.window = this.assignWindow(page.window);
+        return page;
+      }
+    }
+  },
+  findActivePlayingPage: function(isPrevPlaying) {
+    if (isPrevPlaying && !this.ignoreFindPage) {
+      var page = this.findPage(true);
+
+      if (page && page.window && page.window !== this.window) {
         var header = this.getHeader(page.document);
-        if (header) {
 
+        if (header) {
           if (this.isMute) {
             this.setMute();
           }
 
           mixin(this, page);
-          if (this.isDocumentAvailable()) {
-            return true;
-          }
-        }
-      }
-    } catch (e) {
-      error(e);
-      this.stopObserve = true;
-    }
-    return false;
-  },
-  findPage: function(onlyPlaying) {
-    try {
-      var pages = getPages(this.isSoundCloudPage);
-      if (pages) {
-        var page = this.getPlayingPage(pages);
+          if (this.isDocumentEnabled()) {
+            this.clearPlayControls();
+            this.playerEnabled = false;
 
-        if (!onlyPlaying && !page) {
-          page = pages[0];
-        }
-
-        if (page && page.window) {
-          page.window = this.assignWindow(page.window);
-          return page;
-        }
-      }
-    } catch (e) {
-      error(e);
-      this.stopObserve = true;
-    }
-  },
-  findActivePlayingPage: function(isPrevPlaying) {
-    try {
-      if (isPrevPlaying && !this.ignoreFindPage) {
-        var page = this.findPage(true);
-
-        if (page && page.window && page.window !== this.window) {
-          var header = this.getHeader(page.document);
-
-          if (header) {
-            if (this.isMute) {
-              this.setMute();
-            }
-
-            mixin(this, page);
-            if (this.isDocumentAvailable()) {
-              this.clearPlayControls();
-              this.playerAvailable = false;
-
-              if (this.getPlayControl()) {
-                this.playerAvailable = true;
-                return true;
-              }
+            if (this.getPlayControl()) {
+              this.playerEnabled = true;
+              return true;
             }
           }
         }
       }
-    } catch (e) {
-      error(e);
-      this.stopObserve = true;
     }
     return false;
   },
   assignWindow: function(win) {
-    try {
-      if (win) {
-        if (typeof win.require !== 'function' &&
-            typeof win.jQuery !== 'function') {
-          return wrappedObject(win);
-        }
-      }
-    } catch (e) {}
+    if (win != null &&
+        typeof win.require !== 'function' &&
+        typeof win.jQuery !== 'function') {
+      return wrappedObject(win);
+    }
     return win;
   },
-  isDocumentAvailable: function() {
-    // Ignore dead object error.
+  isDocumentEnabled: function() {
     try {
       return !!(this.window && this.document &&
                 typeof this.document.querySelector === 'function');
-    } catch (e) {}
+    } catch (e) {
+      // Ignore dead object error
+    }
     return false;
   },
-  isPlayControlAvailable: function() {
-    return this.isDocumentAvailable() && this.playControl != null &&
-           this.playControl.nodeType === 1 && this.isElementAvailable(this.playControl);
+  isPlayControlEnabled: function() {
+    return this.isDocumentEnabled() && this.playControl != null &&
+           this.playControl.nodeType === 1 && this.isElementEnabled(this.playControl);
   },
-  isElementAvailable: function(elem) {
+  isElementEnabled: function(elem) {
     try {
-      // Check dead object
-      if (elem && elem.nodeType === 1 && (elem.getAttribute('test') || true)) {
+      if (elem && elem.nodeType === 1) {
         return true;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore dead object error
+    }
     return false;
   },
   isSoundCloudPage: function(url) {
-    return /^https?:\/\/soundcloud\.com\//.test(url);
+    return this.RE_BASE_URL.test(url);
   },
   isVolumeSliderEnabled: function() {
-    if (!this.isPlayControlAvailable()) {
+    if (!this.isPlayControlEnabled()) {
       return false;
     }
-    return this.volumeSlider != null && this.volumeSlider.clientWidth === this.VOLUME_SLIDER_WIDTH;
+    return this.volumeSlider != null &&
+           this.volumeSlider.clientWidth === this.VOLUME_SLIDER_WIDTH;
   },
   moveVolumeSliderHandle: function(vol) {
-    if (this.ignoreVolumeSettings || !this.isVolumeSliderEnabled()) {
+    if (this.ignoreVolumeSettings || !this.isVolumeSliderEnabled() ||
+        !this.isDocumentEnabled()) {
       return false;
     }
 
-    try {
-      var $ = this.window.jQuery;
-      var left =  $(this.volumeSlider).offset().left;
-      var width = this.VOLUME_SLIDER_POSITIONS[Math.floor(vol * 10)] || 0;
-      var x = Math.round(left + width);
+    var left =  this.window.jQuery(this.volumeSlider).offset().left;
+    var width = this.VOLUME_SLIDER_POSITIONS[Math.floor(vol * 10)] || 0;
+    var x = Math.round(left + width);
 
-      this.simulateEvent('click', this.volumeSlider, {
-        clientX: x
-      });
-    } catch (e) {
-      error(e);
-    }
+    this.simulateEvent('click', this.volumeSlider, {
+      clientX: x
+    });
   },
   checkActiveWindow: function() {
     var win = getSelectedWindow();
@@ -886,14 +849,14 @@ var SoundCloudPlayer = {
     return false;
   },
   checkDocuments: function() {
-    if (this.isDocumentAvailable()) {
+    if (this.isDocumentEnabled()) {
       return true;
     }
     this.clearDocuments();
     return false;
   },
   checkPlayControls: function() {
-    if (this.isPlayControlAvailable()) {
+    if (this.isPlayControlEnabled()) {
       return true;
     }
     this.clearPlayControls();
@@ -919,9 +882,10 @@ var SoundCloudPlayer = {
   getHeader: function(doc) {
     try {
       var headers = doc.getElementsByTagName('header');
-
       return headers && headers[0];
-    } catch (e) {}
+    } catch (e) {
+      // ignore dead object error
+    }
   },
   getPlayingPage: function(pages) {
     if (pages) {
@@ -929,7 +893,7 @@ var SoundCloudPlayer = {
         var page = pages[i];
         if (page && page.document) {
           var play = this.getPlayControlElement(page.document, 'playControl');
-          if (play && hasClass(play, 'playing')) {
+          if (play && play.classList.contains('playing')) {
             return page;
           }
         }
@@ -938,16 +902,17 @@ var SoundCloudPlayer = {
   },
   getPlayControlElement: function(doc, className) {
     if (doc && typeof doc.querySelector === 'function') {
-      return doc.querySelector('.header__playbackControl .' + className)  ||
-             doc.querySelector('.header__playbackControls .' + className) ||
-             doc.querySelector('.' + className);
+      return doc.querySelector([
+               '.header__playbackControl .' + className,
+               '.header__playbackControls .' + className,
+               '.' + className
+             ].join(','));
     }
   },
   getPlayControl: function() {
-    if (!this.isDocumentAvailable() || this.isPlayControlAvailable()) {
+    if (!this.isDocumentEnabled() || this.isPlayControlEnabled()) {
       return;
     }
-    var that = this;
     var doc = this.document;
     var classes = this.playControlClasses;
     var elems = {};
@@ -956,7 +921,7 @@ var SoundCloudPlayer = {
       if (elems) {
         var className = classes[type].className;
         var prop = classes[type].prop;
-        var elem = that.getPlayControlElement(doc, className);
+        var elem = this.getPlayControlElement(doc, className);
 
         if (elem) {
           elems[prop] = elem;
@@ -964,7 +929,7 @@ var SoundCloudPlayer = {
           elems = null;
         }
       }
-    });
+    }, this);
 
     if (elems) {
       mixin(this, elems);
@@ -973,85 +938,119 @@ var SoundCloudPlayer = {
     return false;
   },
   click: function(elem) {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
     click(this.window, this.document, elem);
   },
   simulateEvent: function(type, elem, ev) {
-    if (!this.isDocumentAvailable()) {
+    if (!this.isDocumentEnabled()) {
       return;
     }
     simulateEvent(this.window, this.document, type, elem, ev);
   },
-  observe: function() {
-    if (this.observing) {
-      return;
-    }
-    var that = this;
-    var isPrevPlaying = null;
+  observe: (function() {
+    var errors = [];
 
-    async.observe(function() {
-      try {
-        that.checkDocuments();
-        that.checkPlayControls();
+    return function() {
+      if (this.observing) {
+        return;
+      }
+      var that = this;
 
-        if (!that.isDocumentAvailable()) {
-          if (that.getElementTitle()) {
-            that.setCurrentTitle();
-            that.setToggleClass();
-          }
-          if (that.findTab() && that.getPlayControl()) {
-            that.playerAvailable = true;
-          }
+      this.observing = true;
+      async.observe(this.observeService.bind(this), this.interval).rescue(function(err) {
+        var retry = false;
+
+        if (that.observing || that.closing) {
+          return;
         }
 
-        if (that.isPlayControlAvailable()) {
-          that.addVolumeTrapper();
-
-          if (!that.isMuteInited && that.toggleMute()) {
-            that.isMuteInited = true;
+        errors.push(err);
+        if (errors.length < 3) {
+          retry = true;
+        } else {
+          if (!errors.slice(1).every(function(e) { return '' + e === '' + err })) {
+            retry = true;
           }
-          that.setCurrentTitle();
-          that.setLikedClass();
+          errors.shift();
+        }
 
-          if (!that.isSliderChanging && !that.ignoreVolumeSettings) {
-            that.setCurrentVolume();
+        //XXX: Retry
+        if (retry) {
+          async.wait(5).then(function() {
+            log(err, 'SoundCloudPlayer: Retry observe');
+            that.stopObserve = false;
+            that.observe();
+          });
+        } else {
+          error(err);
+          throw err;
+        }
+      });
+    };
+  }()),
+  observeService: (function() {
+    var isPrevPlaying = null;
+
+    return function() {
+      try {
+        this.checkDocuments();
+        this.checkPlayControls();
+
+        if (!this.isDocumentEnabled() &&
+            this.findTab() && this.getPlayControl()) {
+          this.playerEnabled = true;
+        } else {
+          this.playerEnabled = false;
+        }
+
+        if (this.isPlayControlEnabled()) {
+          this.addVolumeTrapper();
+
+          if (!this.isMuteInited && this.toggleMute()) {
+            this.isMuteInited = true;
+          }
+          if (this.isMute) {
+            this.setMute();
+          }
+          this.setLikedClass();
+
+          if (!this.isSliderChanging && !this.ignoreVolumeSettings) {
+            this.setCurrentVolume();
           }
 
-          if (that.elements.toggle) {
-            var isPlaying = that.setToggleClass();
+          if (this.elements) {
+            var playing = this.togglePlaying();
 
-            if (isPlaying) {
+            if (playing) {
               isPrevPlaying = true;
             } else {
-              if ((isPrevPlaying === null || isPrevPlaying) && !that.ignoreFindPage) {
-                if (that.checkActiveWindow()) {
-                  that.onTabSelect();
+              if ((isPrevPlaying === null || isPrevPlaying) && !this.ignoreFindPage) {
+                if (this.checkActiveWindow()) {
+                  this.onTabSelect();
                 } else {
-                  that.findActivePlayingPage(true);
+                  this.findActivePlayingPage(true);
                 }
               }
               isPrevPlaying = false;
             }
           }
         }
+        this.togglePlayerDisabled();
+        this.setCurrentTitle();
+        this.togglePlaying();
 
-        if (that.stopObserve) {
-          that.observing = false;
+        if (this.stopObserve) {
+          this.observing = false;
           return false;
         }
       } catch (e) {
-        error(e);
-        that.observing = false;
-        return false;
+        this.observing = false;
+        throw e;
       }
-    }, this.interval).ensure(function(res) {
-      //log(res, 'Stopped Observe');
-    });
-
-    this.observing = true;
-  },
+    };
+  }()),
   onTabLoad: function(event) {
     if (event.originalTarget instanceof HTMLDocument) {
       var win = event.originalTarget.defaultView;
@@ -1119,12 +1118,12 @@ var SoundCloudPlayer = {
           }
           mixin(this, page);
 
-          if (this.isDocumentAvailable()) {
+          if (this.isDocumentEnabled()) {
             this.clearPlayControls();
-            this.playerAvailable = false;
+            this.playerEnabled = false;
 
             if (this.getPlayControl()) {
-              this.playerAvailable = true;
+              this.playerEnabled = true;
               if (!this.isMuteInited && this.toggleMute()) {
                 this.isMuteInited = true;
               }
@@ -1138,6 +1137,7 @@ var SoundCloudPlayer = {
       }
     } catch (e) {
       error(e);
+      throw e;
     } finally {
       this.tabSelecting = false;
       this.ignoreVolumeSettings = false;
@@ -1145,5 +1145,4 @@ var SoundCloudPlayer = {
     return false;
   }
 };
-
 

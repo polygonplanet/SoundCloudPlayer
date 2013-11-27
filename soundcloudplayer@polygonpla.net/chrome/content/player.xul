@@ -9,52 +9,59 @@
 
   <toolbarpalette id="BrowserToolbarPalette">
 
-    <toolbarbutton id="soundcloudplayer-control-like"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.Like;"
-                   tooltiptext="&label.Like;" />
-
-    <toolbarbutton id="soundcloudplayer-control-prev"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.PreviousTrack;"
-                   tooltiptext="&label.PreviousTrack;" />
-
-    <toolbarbutton id="soundcloudplayer-control-toggle"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.Play;"
-                   tooltiptext="&label.Play;" />
-
-    <toolbarbutton id="soundcloudplayer-control-next"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.NextTrack;"
-                   tooltiptext="&label.NextTrack;" />
-
-    <toolbarbutton id="soundcloudplayer-control-title"
-                   label="&label.CurrentTitle;"
-                   tooltiptext="&label.CurrentTitle;">
-      <stack id="soundcloudplayer-control-title-text"></stack>
-    </toolbarbutton>
-
-    <toolbarbutton id="soundcloudplayer-control-volume"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.Mute;"
-                   tooltiptext="&label.Mute;" />
-
-    <toolbaritem id="soundcloudplayer-control-volume-slider-wrapper"
-                 label="&label.Volume;"
+    <toolbaritem id="soundcloudplayer-player"
+                 title="&label.SoundCloudPlayer;"
+                 label="&label.SoundCloudPlayer;"
                  context="">
-      <html:input id="soundcloudplayer-control-volume-slider"
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="1"
-                  value="5" />
-    </toolbaritem>
 
-    <toolbarbutton id="soundcloudplayer-control-open"
-                   class="toolbarbutton-1 soundcloudplayer-button"
-                   label="&label.OpenSoundCloud;"
-                   tooltiptext="&label.OpenSoundCloud;" />
+      <toolbarbutton id="soundcloudplayer-control-like"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.Like;"
+                     tooltiptext="&label.Like;" />
+
+      <toolbarbutton id="soundcloudplayer-control-prev"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.PreviousTrack;"
+                     tooltiptext="&label.PreviousTrack;" />
+
+      <toolbarbutton id="soundcloudplayer-control-toggle"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.Play;"
+                     tooltiptext="&label.Play;" />
+
+      <toolbarbutton id="soundcloudplayer-control-next"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.NextTrack;"
+                     tooltiptext="&label.NextTrack;" />
+
+      <toolbarbutton id="soundcloudplayer-control-title"
+                     label="&label.CurrentTitle;"
+                     tooltiptext="&label.CurrentTitle;">
+        <stack id="soundcloudplayer-control-title-text"></stack>
+      </toolbarbutton>
+
+      <toolbarbutton id="soundcloudplayer-control-volume"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.Mute;"
+                     tooltiptext="&label.Mute;" />
+
+      <toolbaritem id="soundcloudplayer-control-volume-slider-wrapper"
+                   title="&label.Volume;"
+                   context="">
+        <html:input id="soundcloudplayer-control-volume-slider"
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="1"
+                    value="5" />
+      </toolbaritem>
+
+      <toolbarbutton id="soundcloudplayer-control-open"
+                     class="toolbarbutton-1 soundcloudplayer-button"
+                     label="&label.OpenSoundCloud;"
+                     tooltiptext="&label.OpenSoundCloud;" />
+
+    </toolbaritem>
 
   </toolbarpalette>
 

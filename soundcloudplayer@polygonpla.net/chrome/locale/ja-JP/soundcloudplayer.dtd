@@ -1,4 +1,4 @@
-<!ENTITY soundcloudplayer-overlay "SoundCloudPlayer">
+<!ENTITY label.SoundCloudPlayer "SoundCloudPlayer">
 
 <!ENTITY label.Like "Like">
 <!ENTITY label.Liked "Liked">
@@ -15,4 +15,6 @@
 <!ENTITY label.Volume "ボリューム">
 
 <!ENTITY label.OpenSoundCloud "SoundCloudを開く">
+
+<!ENTITY label.NotFoundSoundCloud "SoundCloudを開いてるタブが見つかりません">
 

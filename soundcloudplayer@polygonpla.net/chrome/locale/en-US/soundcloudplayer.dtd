@@ -1,4 +1,4 @@
-<!ENTITY soundcloudplayer-overlay "SoundCloudPlayer">
+<!ENTITY label.SoundCloudPlayer "SoundCloudPlayer">
 
 <!ENTITY label.Like "Like">
 <!ENTITY label.Liked "Liked">
@@ -16,4 +16,5 @@
 
 <!ENTITY label.OpenSoundCloud "Open SoundCloud">
 
+<!ENTITY label.NotFoundSoundCloud "Could not found SoundCloud tab">
 

@@ -32,33 +32,22 @@ var getPrefBranch = function() {
   return PrefService.getBranch('');
 };
 
-var console = (function() {
-  if (typeof console === 'undefined') {
-    return {
-      log: log,
-      debug: log,
-      error: error
-    };
-  }
-  return console;
-}());
 
-var XMLHttpRequest = Components.Constructor('@mozilla.org/xmlextras/xmlhttprequest;1');
-var XMLSerializer = Components.Constructor('@mozilla.org/xmlextras/xmlserializer;1');
-var DOMParser = Components.Constructor('@mozilla.org/xmlextras/domparser;1');
-var XPathEvaluator = Components.Constructor('@mozilla.org/dom/xpath-evaluator;1');
-var XPathResult = Ci.nsIDOMXPathResult;
+var objectProto = Object.prototype;
+var toObjectString = objectProto.toString;
+var objectStringified = toObjectString(objectProto).split('Object');
 
-var toObjectString = Object.prototype.toString;
-//var toFunctionString = Function.prototype.toString;
 
 var typeOf = (function() {
   var types = {};
   var getType = function(type) {
-    return '[object ' + type.toLowerCase().replace(/^(.)/, (a) => a.toUpperCase()) + ']';
+    var name = type.toLowerCase();
+    return objectStringified[0] +
+           name.charAt(0).toUpperCase() + name.slice(1) +
+           objectStringified[1];
   };
 
-  'Boolean Number String Function Array Date RegExp Object Error'.split(' ').forEach((type) => {
+  'Boolean Number String Function Array Date RegExp Object Error'.split(' ').forEach(function(type) {
     var lower = type.toLowerCase();
 
     types['is' + type] = (function() {
@@ -84,7 +73,10 @@ var typeOf = (function() {
     if (o === null) {
       return 'null';
     }
-    return toObjectString.call(o).match(/\s+([^\]]+)\]+$/)[1].toLowerCase();
+    if (o === void 0) {
+      return 'undefined';
+    }
+    return toObjectString.call(o).slice(8, -1).toLowerCase();
   }, types);
 }());
 
@@ -106,17 +98,16 @@ var isArrayLike = function(x) {
 function keys(o) {
   var r = [];
   if (o != null) {
-    var i;
-    var len = o.length;
+    var i = 0, len = o.length;
     if (len - 0 === len) {
-      for (i = 0; i < len; i++) {
+      for (; i < len; i++) {
         if (i in o) {
           r.push(i);
         }
       }
     } else {
-      for (i in o) {
-        r.push(i);
+      for (var p in o) {
+        r.push(p);
       }
     }
   }
@@ -127,17 +118,16 @@ function keys(o) {
 function values(o) {
   var r = [];
   if (o != null) {
-    var i;
-    var len = o.length;
+    var i = 0, len = o.length;
     if (len - 0 === len) {
-      for (i = 0; i < len; i++) {
+      for (; i < len; i++) {
         if (i in o) {
           r.push(o[i]);
         }
       }
     } else {
-      for (i in o) {
-        r.push(o[i]);
+      for (var p in o) {
+        r.push(o[p]);
       }
     }
   }
@@ -145,25 +135,20 @@ function values(o) {
 }
 
 
-function each(target, iter, context) {
+function forEach(target, iter, context) {
   if (target != null) {
     try {
       if (typeof target.forEach === 'function') {
         target.forEach(iter, context);
       } else {
-        var i;
-        var len = target.length;
+        var i = 0, len = target.length;
         if (len - 0 === len) {
-          for (i = 0; i < len; i++) {
-            if (iter.call(context, target[i], i, target) === StopIteration) {
-              break;
-            }
+          for (; i < len; i++) {
+            iter.call(context, target[i], i, target);
           }
         } else {
-          for (i in target) {
-            if (iter.call(context, target[i], i, target) === StopIteration) {
-              break;
-            }
+          for (var p in target) {
+            iter.call(context, target[p], p, target);
           }
         }
       }
@@ -177,12 +162,14 @@ function each(target, iter, context) {
 }
 
 
-function mixin(target, source) {
-  var keys = Object.keys(source);
-  for (var i = 0, len = keys.length; i < len; i++) {
-    var key = keys[i];
-    target[key] = source[key];
-  }
+function mixin(target) {
+  Array.slice(arguments, 1).forEach(function(source) {
+    var keys = Object.keys(source);
+    for (var i = 0, len = keys.length; i < len; i++) {
+      var key = keys[i];
+      target[key] = source[key];
+    }
+  });
   return target;
 }
 
@@ -196,6 +183,11 @@ function partial(func) {
 }
 
 
+function bind(context, func) {
+  return func.bind(context);
+}
+
+
 function getChromeURI(path) {
   return CHROME_DIR + path;
 }
@@ -203,38 +195,31 @@ function getChromeURI(path) {
 
 function getPages(callback) {
   var pages = [];
-  var browserEnumerator = WindowMediator.getEnumerator('navigator:browser');
+  var iter = WindowMediator.getEnumerator('navigator:browser');
 
-  while (browserEnumerator.hasMoreElements()) {
+  while (iter.hasMoreElements()) {
     try {
-      var browser = browserEnumerator.getNext();
+      var browser = iter.getNext();
       var tabbrowser = browser.gBrowser;
-      var browsersLen = tabbrowser.browsers.length;
 
-      for (var i = 0, len = browsersLen; i < len; i++) {
-        var ret = function(currentBrowser, tab) {
-          var win = currentBrowser.contentDocument.defaultView;
+      for (var i = 0, len = tabbrowser.browsers.length; i < len; i++) {
+        var tab = tabbrowser.tabContainer.childNodes[i];
+        var win = tabbrowser.getBrowserAtIndex(i).contentDocument.defaultView;
 
-          if (win && hasDocument(win)) {
-            var doc = getDocument(win);
-            var url = '' + doc.URL;
+        if (win && hasDocument(win)) {
+          var doc = getDocument(win);
+          var url = '' + doc.URL;
 
-            if (callback(url, doc)) {
-              return {
-                url: url,
-                tab: tab,
-                window: win,
-                browser: browser,
-                document: doc,
-                tabbrowser: tabbrowser
-              };
-            }
+          if (callback(url, doc)) {
+            pages.push({
+              url: url,
+              tab: tab,
+              window: win,
+              browser: browser,
+              document: doc,
+              tabbrowser: tabbrowser
+            });
           }
-        }(tabbrowser.getBrowserAtIndex(i),
-          tabbrowser.tabContainer.childNodes[i]);
-
-        if (ret) {
-          pages.push(ret);
         }
       }
     } catch (e) {
@@ -281,15 +266,39 @@ function getDocument(win) {
 }
 
 
-function observe(func, delay) {
-  setTimeout(function observe() {
-    var time = Date.now();
-    if (func() !== false) {
-      setTimeout(function() {
-        observe();
-      }, Math.min(1500, delay + (Date.now() - time)));
-    }
-  }, 0);
+function isDocumentEnabled(doc) {
+  try {
+    return doc != null && doc.defaultView != null && doc.defaultView.document === doc;
+  } catch (e) {
+    // Ignore dead object error
+  }
+  return false;
+}
+
+
+function isWindowEnabled(win) {
+  try {
+    return win != null && hasDocument(win);
+  } catch (e) {}
+  return false;
+}
+
+
+function isElementEnabled(elem) {
+  try {
+    return elem != null && elem.nodeType === 1;
+  } catch (e) {}
+  return false;
+}
+
+
+function getHeader(doc) {
+  try {
+    var headers = doc.getElementsByTagName('header');
+    return headers && headers[0];
+  } catch (e) {
+    // ignore dead object error
+  }
 }
 
 
@@ -301,46 +310,15 @@ function click(win, doc, elem) {
 function simulateEvent(win, doc, type, elem, ev) {
   var evt = doc.createEvent('MouseEvents');
 
-  if (ev) {
-    evt.initMouseEvent(type, true, true, win,
-      1, 0, 0, ev.clientX || 0, ev.clientY || 0,
-      false, false, false, false,
-      0, null
-    );
-  } else {
-    evt.initMouseEvent(type, true, true, win,
-      1, 0, 0, 0, 0,
-      false, false, false, false,
-      0, null
-    );
-  }
+  evt.initMouseEvent(
+    type, true, true, win,
+    1, 0, 0,
+    ev ? ev.clientX || 0 : 0,
+    ev ? ev.clientY || 0 : 0,
+    false, false, false, false,
+    0, null
+  );
   elem.dispatchEvent(evt);
-}
-
-
-function hasClass(elem, className) {
-  return elem.className.split(' ').indexOf(className) !== -1;
-}
-
-
-function addClass(elem, className) {
-  var parts = elem.className.split(' ');
-  var index = parts.indexOf(className);
-  if (!~index) {
-    elem.className += ' ' + className;
-  }
-  return elem;
-}
-
-
-function removeClass(elem, className) {
-  var parts = elem.className.split(' ');
-  var index = parts.indexOf(className);
-  if (~index) {
-    parts.splice(index, 1);
-  }
-  elem.className = parts.join(' ');
-  return elem;
 }
 
 
@@ -383,9 +361,11 @@ function getService(cid, ifc) {
 
 
 function defineSymbolicObject(name) {
-  var F = function() { return F };
+  var F = function() { return F; };
   F.message = name;
-  F.toString = F.valueOf = function() { return '[object ' + name + ']' };
+  F.toString = F.valueOf = function() {
+    return objectStringified[0] + name + objectStringified[1];
+  };
   F.prototype = new Error(name);
   F.prototype.constructor = F;
   F.prototype.constructor.prototype = F.constructor.prototype;
@@ -393,55 +373,38 @@ function defineSymbolicObject(name) {
 }
 
 
-function createConstructor(construct, proto) {
-  if (proto == null && typeof construct === 'object') {
-    proto = construct;
-    construct = function(){};
+function createConstructor(Ctor, proto) {
+  if (proto == null && typeof Ctor === 'object') {
+    proto = Ctor, Ctor = (function(){});
   }
-  construct.prototype = proto;
-  proto.constructor = construct;
-  return construct;
+  if ('init' in proto) {
+    Ctor = (function(Ctor_) {
+      return function() {
+        Ctor_ && Ctor_.apply(this, arguments);
+        return this.init.apply(this, arguments) || this;
+      };
+    }(Ctor));
+  }
+  return Ctor.prototype = proto, proto.constructor = Ctor, Ctor;
 }
 
 
-var Events = createConstructor(function Events(target) {
-  this.target = target;
-}, {
-  add: function(type, func, cap) {
-    var fn = function() {
-      func.apply(func, arguments);
-    };
-    var c = !!cap;
-
-    this.target.addEventListener(type, fn, c);
-
-    this.data = {
-      type: type,
-      func: fn,
-      cap: c
-    };
-    return this.data;
+var Timer = createConstructor({
+  ids: null,
+  init: function() {
+    this.ids = {};
   },
-  remove: function(data) {
-    data = data || this.data;
-    if (data) {
-      this.target.removeEventListener(data.type, data.func, data.cap);
-    }
-  }
-});
-
-
-var Timer = createConstructor(function Timer() {
-  return (this.ids = {}, this);
-}, {
   set: function(func, msec) {
     var that = this;
     var id = setTimeout(function() {
-      delete that.ids[id];
-      func();
+      try {
+        func();
+      } finally {
+        that.clear(id);
+      }
     }, msec || 0);
 
-    this.ids[id] = func;
+    this.ids[id] = id;
     return this;
   },
   clear: function(id) {
@@ -456,7 +419,7 @@ var Timer = createConstructor(function Timer() {
     Object.keys(this.ids).forEach(function(id) {
       that.clear(id);
     });
-    this.ids = {};
+    this.init();
     return this;
   }
 });
@@ -465,7 +428,7 @@ var Timer = createConstructor(function Timer() {
 /*
  * Functions from tombfix (tombloo fork) utilities.
  * https://github.com/tombfix/core
- * These code follows tombfix/tombloo license.
+ * These functions follows tombfix/tombloo license.
  */
 
 function broad(obj, ifcs) {
@@ -552,129 +515,6 @@ function isEmpty(obj) {
     return false;
   }
   return true;
-}
-
-
-function queryString(params, question) {
-  var queries;
-
-  if (typeof params === 'string') {
-    return params;
-  }
-
-  if (isEmpty(params)) {
-    return '';
-  }
-
-  queries = [];
-
-  for (var key in params) {
-    if (params.hasOwnProperty(key)) {
-      var value = params[key];
-      if (value == null) {
-        continue;
-      }
-      if (Array.isArray(value)) {
-        value.forEach(function(val) {
-          queries.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
-        });
-      } else {
-        queries.push(encodeURIComponent(key) + '=' + encodeURIComponent(value));
-      }
-    }
-  }
-  return (question ? '?' : '') + queries.join('&');
-}
-
-
-function request(url, options) {
-  var req = new XMLHttpRequest();
-  var d = new Deferred();
-  var opts = mixin({}, options || {});
-  var method = opts.method && opts.method.toUpperCase();
-  var multipart = !!opts.multipart;
-  var setHeader = true;
-  var data, key, value;
-
-  if (opts.sendContent) {
-    var sendContent = opts.sendContent;
-
-    if (opts.mode === 'raw') {
-      data = sendContent;
-    } else {
-      for (key in sendContent) {
-        if (typeof File !== 'undefined' && sendContent[key] instanceof File) {
-          multipart = true;
-          break;
-        }
-      }
-
-      if (multipart && typeof FormData !== 'undefined') {
-        data = new FormData();
-        for (key in sendContent) {
-          value = sendContent[key];
-          if (value == null) {
-            continue;
-          }
-          data.append(key, value);
-        }
-      } else {
-        data = queryString(sendContent, false);
-      }
-    }
-    method = method || 'POST';
-  } else {
-    if (opts.queryString) {
-      url += queryString(opts.queryString, true);
-    }
-    method = method || 'GET';
-  }
-
-  req.mozBackgroundRequest = req.backgroundRequest = true;
-
-  if ('username' in opts) {
-    req.open(method, url, true, opts.username, opts.password);
-  } else {
-    req.open(method, url, true);
-  }
-
-  if (opts.responseType) {
-    req.responseType = opts.responseType;
-  }
-
-  if (opts.charset) {
-    req.overrideMimeType(opts.charset);
-  }
-
-  if (opts.headers) {
-    if (opts.headers['Content-Type']) {
-      setHeader = false;
-    }
-    Object.keys(opts.headers).forEach(function(key) {
-      req.setRequestHeader(key, opts.headers[key]);
-    });
-  }
-
-  if (opts.referrer) {
-    req.setRequestHeader('Referer', opts.referrer);
-  }
-
-  if (setHeader && opts.sendContent && !multipart) {
-    req.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-  }
-
-  req.addEventListener('readystatechange', function() {
-    if (req.readyState === 4) {
-      if (req.status >= 200 && req.status < 300) {
-        d.begin(req);
-      } else {
-        d.raise(req);
-      }
-    }
-  });
-
-  req.send(data || null);
-  return d;
 }
 
 

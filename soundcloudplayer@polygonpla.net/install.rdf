@@ -18,7 +18,7 @@
     <em:unpack>true</em:unpack>
     <em:description>Control SoundCloud player from Mozilla Firefox statusbar.</em:description>
     <em:creator>polygon planet</em:creator>
-    <em:homepageURL>http://polygonpla.net/</em:homepageURL>
+    <em:homepageURL>https://github.com/polygonplanet/SoundCloudPlayer</em:homepageURL>
     <em:iconURL>chrome://soundcloudplayer/skin/soundcloudplayer-icon.png</em:iconURL>
 
   </Description>
