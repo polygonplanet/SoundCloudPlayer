@@ -35,7 +35,7 @@ var getPrefBranch = function() {
 
 var objectProto = Object.prototype;
 var toObjectString = objectProto.toString;
-var objectStringified = toObjectString(objectProto).split('Object');
+var objectStringified = toObjectString.call(objectProto).split('Object');
 
 
 var typeOf = (function() {
