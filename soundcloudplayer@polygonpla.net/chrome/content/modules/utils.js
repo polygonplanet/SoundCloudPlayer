@@ -4,337 +4,564 @@
 
 'use strict';
 
-var global = this;
-
-const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
-
 const PREF_PREFIX = 'extensions.soundcloudplayer.';
 
-const CHROME_DIR  = 'chrome://soundcloudplayer';
-const CONTENT_DIR = CHROME_DIR  + '/content';
-const MODULE_DIR  = CONTENT_DIR + '/modules';
+// ----- XPCOM constants/utilities -----
 
-const INTERFACES = values(Ci);
+const INTERFACES = [Ci[i] for (i in Ci)];
 
-const StopIteration = defineSymbolicObject('StopIteration');
-
-const ConsoleService = getService('consoleservice', Ci.nsIConsoleService);
-const WindowMediator = getService('appshell/window-mediator', Ci.nsIWindowMediator);
+const ConsoleService    = getService('consoleservice', Ci.nsIConsoleService);
+const WindowMediator    = getService('appshell/window-mediator', Ci.nsIWindowMediator);
 const JSSubScriptLoader = getService('moz/jssubscript-loader', Ci.mozIJSSubScriptLoader);
-const StringBundle = getService('intl/stringbundle', Ci.nsIStringBundleService)
-                   .createBundle(getChromeURI('/locale/soundcloudplayer.properties'));
-const PrefService = getService('preferences-service', null);
+const StringBundle      = getService('intl/stringbundle', Ci.nsIStringBundleService)
+                        .createBundle(getChromeURI('/locale/soundcloudplayer.properties'));
+const PrefService       = getService('preferences-service', null);
 
-var getPref = partial(getPrefValue, PREF_PREFIX);
-var setPref = partial(setPrefValue, PREF_PREFIX);
+exports.getPref = partial(getPrefValue, PREF_PREFIX);
+exports.setPref = partial(setPrefValue, PREF_PREFIX);
 
 var getPrefBranch = function() {
   return PrefService.getBranch('');
 };
 
+// ----- Objective utilities -----
 
-var objectProto = Object.prototype;
-var toObjectString = objectProto.toString;
-var objectStringified = toObjectString.call(objectProto).split('Object');
+// Avoid notice for mozilla firefox addon validator.
+// `Function` can't use for strict check.
+//XXX: constructor
+let (p = Object.constructor.prototype) {
+  exports.toSource    = p.toString.call.bind(p.toString);
+  exports.isGenerator = p.isGenerator.call.bind(p.isGenerator);
+}
+
+let (p = Object.prototype) {
+  exports.hasOwn   = p.hasOwnProperty.call.bind(p.hasOwnProperty);
+  exports.toString = p.toString.call.bind(p.toString);
+  var typeBrackets = toString(Object()).split('Object');
+}
 
 
-var typeOf = (function() {
-  var types = {};
-  var getType = function(type) {
-    var name = type.toLowerCase();
-    return objectStringified[0] +
-           name.charAt(0).toUpperCase() + name.slice(1) +
-           objectStringified[1];
+let (typeis = {}) {
+
+  let getType = function(type) {
+    let name = type.toLowerCase();
+    return typeBrackets.join(name.charAt(0).toUpperCase() + name.slice(1));
   };
 
-  'Boolean Number String Function Array Date RegExp Object Error'.split(' ').forEach(function(type) {
-    var lower = type.toLowerCase();
+  ['Boolean', 'Number', 'String', 'Function', 'Object'].forEach(function(type) {
+    let typeName = getType(type);
 
-    types['is' + type] = (function() {
-      var typeName = getType(type);
-
-      switch (lower) {
-        case 'error':
-            return function(o) {
-              return (o != null && (o instanceof Error || toObjectString.call(o) === typeName));
-            };
-        case 'date':
-            return function(o) {
-              return (o != null && (o instanceof Date || toObjectString.call(o) === typeName));
-            };
-        default:
-            return function(o) {
-              return toObjectString.call(o) === typeName;
-            };
-      }
-    }());
+    typeis[type] = function(x) {
+      return toString(x) === typeName;
+    };
   });
-  return mixin(function(o) {
-    if (o === null) {
-      return 'null';
-    }
-    if (o === void 0) {
-      return 'undefined';
-    }
-    return toObjectString.call(o).slice(8, -1).toLowerCase();
-  }, types);
-}());
+
+  exports.typeOf = function typeOf(x) {
+    return x === null && 'null' ||
+           x === void 0 && 'undefined' ||
+           toString(x).slice(8, -1).toLowerCase();
+  };
+
+  forEach({
+    isArray    : Array.isArray,
+    isObject   : typeis.Object,
+    isNumber   : typeis.Number,
+    isString   : typeis.String,
+    isFunction : typeis.Function,
+    isDate     : function(x) { return x instanceof Date; },
+    isError    : function(x) { return x instanceof Error; }
+    isRegExp   : function(x) { return x instanceof RegExp; },
+    isBoolean  : function(x) { return x === false || x === true || typeis.Boolean(x); },
+  }, function(fn, name) {
+    exports[name] = fn;
+  });
+
+  exports.isArrayLike = function isArrayLike(x) {
+    return isArray(x) || (x != null && x.length - 0 === x.length);
+  };
+
+  exports.isPrimitive = function isPrimitive(x) {
+    let type;
+    return x == null || !((type = typeof x) === 'object' || type === 'function');
+  };
+
+  let isIterableCode = /\[native\s*code\]|StopIteration/i;
+
+  exports.isIterable = function isIterable(x) {
+    return x != null && typeof x.next === 'function' &&
+           isIterableCode.test(toSource(x.next));
+  };
+}
 
 
-var isBoolean   = typeOf.isBoolean;
-var isNumber    = typeOf.isNumber;
-var isString    = typeOf.isString;
-var isFunction  = typeOf.isFunction;
-var isArray     = typeOf.isArray;
-var isDate      = typeOf.isDate;
-var isRegExp    = typeOf.isRegExp;
-var isObject    = typeOf.isObject;
-var isError     = typeOf.isError;
-var isArrayLike = function(x) {
-  return typeOf.isArray(x) || (x != null && x.length - 0 === x.length);
+/**
+ * A shortcut of Object.keys
+ */
+exports.keys = Object.keys;
+
+
+/**
+ * Return array/object values
+ *
+ * @param {object|array|function} o
+ * @return {array}
+ */
+exports.values = function values(o) {
+  // faster way for Object.keys(o).map((k) => o[k]);
+  var result = [];
+  var keys = Object.keys(o);
+  for (var i = 0, len = keys.length; i < len; i++) {
+    result.push(keys[i]);
+  }
+  return result;
 };
 
 
-function keys(o) {
-  var r = [];
-  if (o != null) {
-    var i = 0, len = o.length;
-    if (len - 0 === len) {
-      for (; i < len; i++) {
-        if (i in o) {
-          r.push(i);
-        }
-      }
-    } else {
-      for (var p in o) {
-        r.push(p);
-      }
+/**
+ * Iterate a iterator.
+ */
+function iterate(iter, func, context) {
+  try {
+    do {
+      func.apply(context, Array.concat(iter.next()));
+    } while (true);
+  } catch (e) {
+    if (e !== StopIteration) {
+      throw e;
     }
   }
-  return r;
+  return iter;
 }
 
 
-function values(o) {
-  var r = [];
-  if (o != null) {
-    var i = 0, len = o.length;
-    if (len - 0 === len) {
-      for (; i < len; i++) {
-        if (i in o) {
-          r.push(o[i]);
-        }
-      }
+/**
+ * Iteration can stop by throw StopIteration;
+ */
+function forEach(target, func, context) {
+  if (target == null) {
+    return;
+  }
+
+  try {
+    if (target.forEach) {
+      target.forEach(func, context);
+    } else if (isGenerator(target)) {
+      iterate(target(), func, context);
+    } else if (isIterable(target)) {
+      iterate(target, func, context);
     } else {
-      for (var p in o) {
-        r.push(o[p]);
+      var keys = Object.keys(target);
+      for (var i = 0, len = keys.length; i < len; i++) {
+        func.call(context, target[keys[i]], keys[i], target);
       }
     }
-  }
-  return r;
-}
-
-
-function forEach(target, iter, context) {
-  if (target != null) {
-    try {
-      if (typeof target.forEach === 'function') {
-        target.forEach(iter, context);
-      } else {
-        var i = 0, len = target.length;
-        if (len - 0 === len) {
-          for (; i < len; i++) {
-            iter.call(context, target[i], i, target);
-          }
-        } else {
-          for (var p in target) {
-            iter.call(context, target[p], p, target);
-          }
-        }
-      }
-    } catch (e) {
-      if (e !== StopIteration) {
-        throw e;
-      }
+  } catch (e) {
+    if (e !== StopIteration) {
+      throw e;
     }
   }
   return target;
 }
 
-
-function mixin(target) {
-  Array.slice(arguments, 1).forEach(function(source) {
-    var keys = Object.keys(source);
-    for (var i = 0, len = keys.length; i < len; i++) {
-      var key = keys[i];
-      target[key] = source[key];
-    }
-  });
-  return target;
-}
+exports.forEach = forEach;
 
 
-function partial(func) {
-  var rests = Array.slice(arguments, 1);
-  return function() {
-    var args = Array.slice(arguments);
-    return func.apply(null, rests.concat(args));
+/**
+ * Return a partially applied function
+ */
+function partial(func, ...rests) {
+  return function(...args) {
+    return func.apply(this, rests.concat(args));
   };
 }
 
+exports.partial = partial;
 
-function bind(context, func) {
-  return func.bind(context);
+
+/**
+ * Create function from any value.
+ *
+ * @param {function|*} fn
+ * @return {function}
+ */
+function callback(fn) {
+  return typeof fn === 'function' ?
+         function() { return fn.apply(this, arguments); } :
+         function() { return fn; };
 }
 
-
-function getChromeURI(path) {
-  return CHROME_DIR + path;
-}
+exports.callback = callback;
 
 
-function getPages(callback) {
-  var pages = [];
-  var iter = WindowMediator.getEnumerator('navigator:browser');
+/**
+ * Return inherited object/function from arguments object.
+ * If method name conflicts, it will inherited from the parent method.
+ *
+ * @example
+ *   var a = { init: function() { log(1) } };
+ *   var b = { init: function() { log(2) } };
+ *   var c = { init: function() { log(3) } };
+ *   var d = extend(a, b, c);
+ *   d.init();
+ *   // 1
+ *   // 2
+ *   // 3
+ *
+ * @param {array.<object|function>} args
+ * @return {object|function}
+ */
+function extend(...args) {
+  var child;
 
-  while (iter.hasMoreElements()) {
-    try {
-      var browser = iter.getNext();
-      var tabbrowser = browser.gBrowser;
+  var inherits = function inherits(childFn, parentFn) {
+    return function() {
+      return childFn.apply(this, arguments), parentFn.apply(this, arguments);
+    };
+  };
 
-      for (var i = 0, len = tabbrowser.browsers.length; i < len; i++) {
-        var tab = tabbrowser.tabContainer.childNodes[i];
-        var win = tabbrowser.getBrowserAtIndex(i).contentDocument.defaultView;
+  args.forEach(function(parent) {
+    child || (child = typeof parent === 'function' ? function(){} : {});
 
-        if (win && hasDocument(win)) {
-          var doc = getDocument(win);
-          var url = '' + doc.URL;
+    var keys = Object.keys(parent);
+    var Ctor = parent.constructor;
 
-          if (callback(url, doc)) {
-            pages.push({
-              url: url,
-              tab: tab,
-              window: win,
-              browser: browser,
-              document: doc,
-              tabbrowser: tabbrowser
-            });
-          }
-        }
+    for (var i = 0, len = keys.length; i < len; i++) {
+      var key = keys[i];
+      var val = parent[key];
+
+      // ignore constructor property
+      if (Ctor && val === Ctor) {
+        continue;
       }
-    } catch (e) {
-      error(e);
+
+      if (typeof val === 'function' && hasOwn(child, key) &&
+          typeof child[key] === 'function') {
+        val = inherits(child[key], val);
+      }
+
+      child[key] = val;
     }
-  }
-  return pages;
-}
 
-
-function getSelectedWindow() {
-  var selectedBrowser = gBrowser.selectedBrowser;
-  var doc = selectedBrowser && selectedBrowser.contentDocument;
-  return doc && doc.defaultView;
-}
-
-
-function getSelectedTabURI() {
-  var win = getSelectedWindow();
-  var doc, uri = '';
-
-  if (win) {
-    if (hasDocument(win)) {
-      doc = getDocument(win);
-      uri = doc.URL;
-    } else {
-      uri = win.location && win.location.href;
-    }
-  }
-  return '' + uri;
-}
-
-
-function hasDocument(win) {
-  return !!(win.document || (win.content && win.content.document));
-}
-
-
-function getDocument(win) {
-  if (win.document) {
-    return win.document;
-  }
-  return win.content && win.content.document;
-}
-
-
-function isDocumentEnabled(doc) {
-  try {
-    return doc != null && doc.defaultView != null && doc.defaultView.document === doc;
-  } catch (e) {
-    // Ignore dead object error
-  }
-  return false;
-}
-
-
-function isWindowEnabled(win) {
-  try {
-    return win != null && hasDocument(win);
-  } catch (e) {}
-  return false;
-}
-
-
-function isElementEnabled(elem) {
-  try {
-    return elem != null && elem.nodeType === 1;
-  } catch (e) {}
-  return false;
-}
-
-
-function getHeader(doc) {
-  try {
-    var headers = doc.getElementsByTagName('header');
-    return headers && headers[0];
-  } catch (e) {
-    // ignore dead object error
-  }
-}
-
-
-function click(win, doc, elem) {
-  simulateEvent(win, doc, 'click', elem);
-}
-
-
-function simulateEvent(win, doc, type, elem, ev) {
-  var evt = doc.createEvent('MouseEvents');
-
-  evt.initMouseEvent(
-    type, true, true, win,
-    1, 0, 0,
-    ev ? ev.clientX || 0 : 0,
-    ev ? ev.clientY || 0 : 0,
-    false, false, false, false,
-    0, null
-  );
-  elem.dispatchEvent(evt);
-}
-
-
-function setLabel(elem, label) {
-  ['label', 'tooltiptext'].forEach(function(attr) {
-    elem.setAttribute(attr, getMessage('label.' + label));
+    Ctor = null;
   });
+  return child;
 }
 
+exports.extend = extend;
 
-function urlToPath(url) {
-  return ('' + url).replace(/^https?:\/+[^\/]+/, '');
+
+/**
+ * Return a constructor function
+ * that can create new instance by method of
+ *  both new operator and non-new operator calls.
+ *
+ * @example
+ *   var A = createConstructor({
+ *     init: function(a, b) {
+ *       this.value = a + b;
+ *     }
+ *   });
+ *   var a = new A(1, 2); // or var a = A(1, 2);
+ *   log(a.value); // 3
+ *
+ * @example
+ *   var A = createConstructor(function(a, b) {
+ *     this.value = a + b;
+ *   });
+ *   var a = new A(10, 20);
+ *   log(a.value); // 30
+ *
+ * @example
+ *   var A = createConstructor(function() {
+ *     this.value = 'new!';
+ *   }, {
+ *     init: function() {
+ *       this.value += 'init';
+ *     }
+ *   });
+ *   var a = new A();
+ *   log(a.value); // new!init
+ *
+ * @param {function|object} [Ctor] constructor function or protorype
+ * @param {object} [proto]  prototype object
+ * @param {string} [name] Constructor name
+ * @return {Function} Constructor function
+ */
+function createConstructor(Ctor, proto, name) {
+  if (typeof Ctor === 'string') {
+    [Ctor, proto, name] = [proto, name, Ctor];
+  }
+  if (typeof proto === 'string') {
+    [proto, name] = [name, proto];
+  }
+
+  if (!Ctor || typeof Ctor === 'object') {
+    proto = Ctor || {}, Ctor = function(){};
+  } else {
+    proto || (proto = {});
+  }
+
+  Ctor = (function(Ctor_) {
+    return function() {
+      var args = arguments;
+
+      if (this instanceof Ctor) {
+        Ctor_.apply(this, args);
+        this.init && this.init.apply(this, args);
+        return this;
+      }
+
+      return new (Ctor.bind.apply(Ctor, args));
+    };
+  }(Ctor));
+
+  Ctor.prototype = proto, proto.constructor = Ctor;
+  name && setObjectName(Ctor, name);
+  return Ctor;
 }
 
+exports.createConstructor = createConstructor;
 
-function getMessage(label, params) {
+
+/**
+ * Return a new object.
+ *
+ * @param {object} [obj] object
+ * @param {string} [name] object name
+ * @return {Object} object
+ */
+function createObject(obj, name) {
+  return new (createConstructor.apply(null, arguments));
+}
+
+exports.createObject = createObject;
+
+
+/**
+ * Set toString function to object.
+ */
+function setObjectName(target, name, protoOnly = false) {
+  var typeName = typeBrackets.join(name);
+  var toString = function toString() { return typeName; };
+  var proto = target.prototype || (target.prototype = {});
+
+  if (protoOnly) {
+    return proto.toString = toString, target;
+  }
+  return target[name] = proto[name] = target,
+         target.toString = proto.toString = toString, target;
+}
+
+exports.setObjectName = setObjectName;
+
+
+/**
+ * Return a new function that will called once.
+ */
+function once(func, callback = null) {
+  var result;
+  var called = false;
+
+  return function() {
+    if (called) {
+      return result;
+    }
+    try {
+      return result = func.apply(this, arguments);
+    } finally {
+      called = true, func = null;
+      callback && callback.apply(this, arguments);
+    }
+  };
+}
+
+exports.once = once;
+
+
+/**
+ * A handy shortcut of Object.defineProperty
+ */
+function defineProp(target, key, desc) {
+  var defaults = {
+    writable: true,
+    enumerable: true,
+    configurable: true
+  };
+
+  var opts = mixin({}, defaults, desc);
+  if (desc.get || desc.set) {
+    delete opts.writable;
+  }
+  return Object.defineProperty(target, key, opts), target;
+}
+
+exports.defineProp = defineProp;
+
+
+/**
+ * Timer utility
+ */
+define('timer', function factory_Timer() {
+  return createConstructor('Timer', {
+    ids: null,
+    init: function() {
+      this.ids = {};
+    },
+    set: function(func, msec) {
+      var id = setTimeout(function() {
+        try {
+          func();
+        } finally {
+          this.clear(id);
+        }
+      }.bind(this), msec || 0);
+
+      return this.ids[id] = id, this;
+    },
+    clear: function(id) {
+      if (id in this.ids) {
+        clearTimeout(id), delete this.ids[id];
+      }
+      return this;
+    },
+    clearAll: function() {
+      var keys = Object.keys(this.ids);
+      for (var i = 0, len = keys.length; i < len; i++) {
+        this.clear(keys[i]);
+      }
+      return this.init(), this;
+    }
+  });
+});
+
+
+/**
+ * Generate a unique id from object.
+ *
+ * @example
+ *   var o = {};
+ *   log(ObjectId.get(o));            // .taghjzikde
+ *   log(ObjectId.get(o));            // .taghjzikde
+ *   log(ObjectId.get({}));           // .nbajy0x68cf
+ *   log(ObjectId.get(function(){})); // .76ir0q75kaj
+ *   log(ObjectId.get(function(){})); // .4qcx2vm577d
+ *   var func = function(){};
+ *   log(ObjectId.get(func));         // .k7zlhrwqaad
+ *   log(ObjectId.get(func));         // .k7zlhrwqaad
+ *   var arr = [1, 2, 3];
+ *   log(ObjectId.get(arr));          // .1apckbwi1yj
+ *   log(ObjectId.get(arr));          // .1apckbwi1yj
+ *   log(ObjectId.get([]));           // .ml7jpun4s0r
+ *
+ * @property {function} ObjectId.get
+ *   Get an unique id from object.
+ *
+ *   @param {object|function|array|*} o
+ *   @return {string}
+ *
+ * @property {function} ObjectId.clear
+ *   Clear all of ids.
+ *
+ *   @return {undefined}
+ */
+define('objectid', function factory_ObjectId() {
+  var map = new Map();
+  var wap = new WeakMap();
+  var ids = {};
+  var genId = function() {
+    // Dot will be avoid conflicts of keywords
+    // that occur in very low probability.
+    var id = Math.random().toString(36).slice(1);
+    return id in ids ? genId() : (ids[id] = null, id);
+  };
+
+  return createObject('ObjectId', {
+    get: function(o) {
+      var id, store = isPrimitive(o) ? map : wap;
+
+      if (store.has(o)) {
+        return store.get(o);
+      }
+
+      return store.set(o, id = genId()), id;
+    },
+    clear: function() {
+      map.clear(), wap.clear(), clearObject(ids);
+    }
+  });
+});
+
+
+/**
+ * Create object metadata.
+ *
+ * @example
+ *   var obj = {a: 1, b: 2, c: 3};
+ *   var meta = ObjectMeta.get(obj);
+ *   meta.a = typeof obj.a;
+ *   log(meta.a); // number
+ *   log(obj.a);  // 1
+ *   meta.len = Object.keys(obj).length;
+ *   log(meta.len); // 3
+ *   log(obj.len);  // undefined
+ *   var meta2 = ObjectMeta.get(obj);
+ *   log(meta2); // { a: "number", len: 3 }
+ *   log(meta === meta2); // true
+ *
+ * @example
+ *   // private usage:
+ *   var obj = {a: 1, b: 2};
+ *   var meta = new ObjectMeta(obj);
+ *   meta.size = Object.keys(obj).length;
+ *   log(meta.size); // 2
+ *   var meta2 = new ObjectMeta(obj);
+ *   log(meta2.size); // undefined
+ *   log(meta === meta2); // false
+ *
+ * @name ObjectMeta
+ * @constructor
+ * @param {object|function|array|*} target
+ * @return {object} return a plain object
+ */
+define('objectmeta', function factory_ObjectMeta() {
+  var globalwm;
+
+  var createMeta = function(o) {
+    return setObjectName(o || {}, 'ObjectMeta');
+  };
+
+  var init = function(target) {
+    if (this instanceof ObjectMeta) {
+      this._wm = new WeakMap();
+      return this._wm.set(target, this.meta = createMeta()), this.meta;
+    }
+    return ObjectMeta.get(target);
+  };
+
+  var ObjectMeta = mixin(createMeta(function ObjectMeta(target) {
+    return init.call(this, target);
+  }), {
+    get: function(target) {
+      globalwm || (globalwm = new WeakMap());
+
+      if (globalwm.has(target)) {
+        return globalwm.get(target);
+      }
+
+      var meta = createMeta();
+      return globalwm.set(target, meta), meta;
+    },
+    clear: function() {
+      globalwm && globalwm.clear();
+    }
+  });
+  return ObjectMeta.prototype = createMeta(), ObjectMeta;
+});
+
+
+// ----- Browser/DOM/XPCOM utilities -----
+
+function __(label, params) {
   var result;
   try {
     if (params === void 0) {
@@ -348,6 +575,8 @@ function getMessage(label, params) {
   return result;
 }
 
+exports.__ = __;
+
 
 function getService(cid, ifc) {
   var c = Cc['@mozilla.org/' + cid + ';1'];
@@ -359,70 +588,7 @@ function getService(cid, ifc) {
   } catch (e) {}
 }
 
-
-function defineSymbolicObject(name) {
-  var F = function() { return F; };
-  F.message = name;
-  F.toString = F.valueOf = function() {
-    return objectStringified[0] + name + objectStringified[1];
-  };
-  F.prototype = new Error(name);
-  F.prototype.constructor = F;
-  F.prototype.constructor.prototype = F.constructor.prototype;
-  return new F();
-}
-
-
-function createConstructor(Ctor, proto) {
-  if (proto == null && typeof Ctor === 'object') {
-    proto = Ctor, Ctor = (function(){});
-  }
-  if ('init' in proto) {
-    Ctor = (function(Ctor_) {
-      return function() {
-        Ctor_ && Ctor_.apply(this, arguments);
-        return this.init.apply(this, arguments) || this;
-      };
-    }(Ctor));
-  }
-  return Ctor.prototype = proto, proto.constructor = Ctor, Ctor;
-}
-
-
-var Timer = createConstructor({
-  ids: null,
-  init: function() {
-    this.ids = {};
-  },
-  set: function(func, msec) {
-    var that = this;
-    var id = setTimeout(function() {
-      try {
-        func();
-      } finally {
-        that.clear(id);
-      }
-    }, msec || 0);
-
-    this.ids[id] = id;
-    return this;
-  },
-  clear: function(id) {
-    if (id in this.ids && this.ids.hasOwnProperty(id)) {
-      clearTimeout(id);
-      delete this.ids[id];
-    }
-    return this;
-  },
-  clearAll: function() {
-    var that = this;
-    Object.keys(this.ids).forEach(function(id) {
-      that.clear(id);
-    });
-    this.init();
-    return this;
-  }
-});
+exports.getService = getService;
 
 
 /*
@@ -442,15 +608,21 @@ function broad(obj, ifcs) {
   return obj;
 }
 
+exports.broad = broad;
+
 
 function wrappedObject(obj) {
   return obj.wrappedJSObject || obj;
 }
 
+exports.wrappedObject = wrappedObject;
+
 
 function getMostRecentWindow() {
   return WindowMediator.getMostRecentWindow('navigator:browser');
 }
+
+exports.getMostRecentWindow = getMostRecentWindow;
 
 
 function getPrefType(key) {
@@ -509,6 +681,8 @@ function addTab(url, background) {
   return d;
 }
 
+exports.addTab = addTab;
+
 
 function isEmpty(obj) {
   for (var i in obj) {
@@ -516,6 +690,18 @@ function isEmpty(obj) {
   }
   return true;
 }
+
+exports.isEmpty = isEmpty;
+
+
+function clearObject(obj) {
+  for (var p in obj) {
+    delete obj[p];
+  }
+  return obj;
+}
+
+exports.clearObject = clearObject;
 
 
 function log(msg) {
@@ -529,6 +715,8 @@ function log(msg) {
   return msg;
 }
 
+exports.log = log;
+
 
 function error(err) {
   try {
@@ -540,6 +728,8 @@ function error(err) {
   }
   return err;
 }
+
+exports.error = error;
 
 
 function firebug(method, args) {
@@ -566,5 +756,4 @@ function firebug(method, args) {
   }
   return false;
 }
-
 
