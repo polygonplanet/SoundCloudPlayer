@@ -4,27 +4,6 @@
 
 'use strict';
 
-const PREF_PREFIX = 'extensions.soundcloudplayer.';
-
-// ----- XPCOM constants/utilities -----
-
-const INTERFACES = [Ci[i] for (i in Ci)];
-
-const ConsoleService    = getService('consoleservice', Ci.nsIConsoleService);
-const WindowMediator    = getService('appshell/window-mediator', Ci.nsIWindowMediator);
-const JSSubScriptLoader = getService('moz/jssubscript-loader', Ci.mozIJSSubScriptLoader);
-const StringBundle      = getService('intl/stringbundle', Ci.nsIStringBundleService)
-                        .createBundle(getChromeURI('/locale/soundcloudplayer.properties'));
-const PrefService       = getService('preferences-service', null);
-
-exports.getPref = partial(getPrefValue, PREF_PREFIX);
-exports.setPref = partial(setPrefValue, PREF_PREFIX);
-
-var getPrefBranch = function() {
-  return PrefService.getBranch('');
-};
-
-// ----- Objective utilities -----
 
 // Avoid notice for mozilla firefox addon validator.
 // `Function` can't use for strict check.
@@ -41,49 +20,36 @@ let (p = Object.prototype) {
 }
 
 
-let (typeis = {}) {
-
-  let getType = function(type) {
-    let name = type.toLowerCase();
-    return typeBrackets.join(name.charAt(0).toUpperCase() + name.slice(1));
-  };
-
-  ['Boolean', 'Number', 'String', 'Function', 'Object'].forEach(function(type) {
-    let typeName = getType(type);
-
-    typeis[type] = function(x) {
-      return toString(x) === typeName;
-    };
-  });
-
+{
   exports.typeOf = function typeOf(x) {
     return x === null && 'null' ||
            x === void 0 && 'undefined' ||
            toString(x).slice(8, -1).toLowerCase();
   };
 
-  forEach({
-    isArray    : Array.isArray,
-    isObject   : typeis.Object,
-    isNumber   : typeis.Number,
-    isString   : typeis.String,
-    isFunction : typeis.Function,
-    isDate     : function(x) { return x instanceof Date; },
-    isError    : function(x) { return x instanceof Error; }
-    isRegExp   : function(x) { return x instanceof RegExp; },
-    isBoolean  : function(x) { return x === false || x === true || typeis.Boolean(x); },
-  }, function(fn, name) {
-    exports[name] = fn;
+
+  [false, 0, '', function(){}, {}, /./, new Error(), new Date()].forEach(function(value) {
+    let name = typeOf(value);
+    let typeName = typeBrackets.join(name = name[0].toUpperCase() + name.slice(1));
+
+    exports['is' + name] = function(x) {
+      return toString(x) === typeName;
+    };
   });
 
+
+  exports.isArray = Array.isArray;
+
   exports.isArrayLike = function isArrayLike(x) {
-    return isArray(x) || (x != null && x.length - 0 === x.length);
+    return isArray(x) || !(x == null || x.length - 0 !== x.length);
   };
+
 
   exports.isPrimitive = function isPrimitive(x) {
     let type;
     return x == null || !((type = typeof x) === 'object' || type === 'function');
   };
+
 
   let isIterableCode = /\[native\s*code\]|StopIteration/i;
 
@@ -118,9 +84,9 @@ exports.values = function values(o) {
 
 
 /**
- * Iterate a iterator.
+ * Iterate an iterator
  */
-function iterate(iter, func, context) {
+exports.iterate = function iterate(iter, func, context = null) {
   try {
     do {
       func.apply(context, Array.concat(iter.next()));
@@ -131,13 +97,13 @@ function iterate(iter, func, context) {
     }
   }
   return iter;
-}
+};
 
 
 /**
  * Iteration can stop by throw StopIteration;
  */
-function forEach(target, func, context) {
+exports.forEach = function forEach(target, func, context = null) {
   if (target == null) {
     return;
   }
@@ -161,21 +127,17 @@ function forEach(target, func, context) {
     }
   }
   return target;
-}
-
-exports.forEach = forEach;
+};
 
 
 /**
  * Return a partially applied function
  */
-function partial(func, ...rests) {
+exports.partial = function partial(func, ...rests) {
   return function(...args) {
     return func.apply(this, rests.concat(args));
   };
-}
-
-exports.partial = partial;
+};
 
 
 /**
@@ -184,13 +146,11 @@ exports.partial = partial;
  * @param {function|*} fn
  * @return {function}
  */
-function callback(fn) {
+exports.callback = function callback(fn) {
   return typeof fn === 'function' ?
          function() { return fn.apply(this, arguments); } :
          function() { return fn; };
-}
-
-exports.callback = callback;
+};
 
 
 /**
@@ -210,14 +170,14 @@ exports.callback = callback;
  * @param {array.<object|function>} args
  * @return {object|function}
  */
-function extend(...args) {
-  var child;
-
-  var inherits = function inherits(childFn, parentFn) {
+exports.extend = function extend(...args) {
+  extend.inherits || (extend.inherits = function(childFn, parentFn) {
     return function() {
       return childFn.apply(this, arguments), parentFn.apply(this, arguments);
     };
-  };
+  });
+
+  var child;
 
   args.forEach(function(parent) {
     child || (child = typeof parent === 'function' ? function(){} : {});
@@ -236,7 +196,7 @@ function extend(...args) {
 
       if (typeof val === 'function' && hasOwn(child, key) &&
           typeof child[key] === 'function') {
-        val = inherits(child[key], val);
+        val = extend.inherits(child[key], val);
       }
 
       child[key] = val;
@@ -245,9 +205,7 @@ function extend(...args) {
     Ctor = null;
   });
   return child;
-}
-
-exports.extend = extend;
+};
 
 
 /**
@@ -282,24 +240,17 @@ exports.extend = extend;
  *   var a = new A();
  *   log(a.value); // new!init
  *
+ * @param {string} [name] name of constructor
  * @param {function|object} [Ctor] constructor function or protorype
  * @param {object} [proto]  prototype object
- * @param {string} [name] Constructor name
- * @return {Function} Constructor function
+ * @return {Function} Return a new constructor function
  */
-function createConstructor(Ctor, proto, name) {
-  if (typeof Ctor === 'string') {
-    [Ctor, proto, name] = [proto, name, Ctor];
-  }
-  if (typeof proto === 'string') {
-    [proto, name] = [name, proto];
-  }
+exports.createConstructor = function createConstructor(name, Ctor, proto) {
+  var order = { s: 0, f: 1, o: 2 };
 
-  if (!Ctor || typeof Ctor === 'object') {
-    proto = Ctor || {}, Ctor = function(){};
-  } else {
-    proto || (proto = {});
-  }
+  [name, Ctor, proto] = Array.slice(arguments).reduce(function(args, a) {
+    return args[order[(typeof a)[0]]] = a, args;
+  }, []);
 
   Ctor = (function(Ctor_) {
     return function() {
@@ -313,34 +264,102 @@ function createConstructor(Ctor, proto, name) {
 
       return new (Ctor.bind.apply(Ctor, args));
     };
-  }(Ctor));
+  }(Ctor || function(){}));
 
-  Ctor.prototype = proto, proto.constructor = Ctor;
+  Ctor.prototype = proto = normalizeProps(proto || {}), proto.constructor = Ctor;
   name && setObjectName(Ctor, name);
   return Ctor;
-}
-
-exports.createConstructor = createConstructor;
+};
 
 
 /**
  * Return a new object.
  *
- * @param {object} [obj] object
  * @param {string} [name] object name
+ * @param {object} [obj] object
  * @return {Object} object
  */
-function createObject(obj, name) {
+exports.createObject = function createObject(name, obj) {
   return new (createConstructor.apply(null, arguments));
-}
+};
 
-exports.createObject = createObject;
+
+/**
+ * Normalize object properties.
+ *
+ * @example
+ *   var o = normalizeProps({
+ *     const: {
+ *       FOO: 1,
+ *       BAR: 2
+ *     },
+ *     private: {
+ *       _value: null
+ *     },
+ *     init: function() {
+ *       this._value = this.FOO + this.BAR;
+ *     },
+ *     get value() {
+ *       return this._value;
+ *     }
+ *   });
+ *   o.init();
+ *   log(o.value); // 3
+ *   o.FOO = 100; // TypeError: "FOO" is read-only
+ *   log(Object.keys(o)); // ['FOO', 'BAR', 'init', 'value']
+ *
+ * @param {object|function} target
+ * @return {object|function}
+ */
+exports.normalizeProps = function normalizeProps(target) {
+  var def = normalizeProps.definition || (normalizeProps.definition = {
+    const: {
+      writable: false,
+      configurable: false
+    },
+    private: {
+      enumerable: false
+    }
+  });
+
+  Object.keys(target).forEach(function(key) {
+    if (hasOwn(def, key)) {
+      var props = target[key];
+
+      Object.keys(props).forEach(function(p) {
+        defineProp(target, p, mixin({}, def[key], {
+          value: props[p]
+        }));
+      });
+      delete target[key];
+    }
+  });
+  return target;
+};
+
+
+/**
+ * A handy shortcut of Object.defineProperty
+ */
+exports.defineProp = function defineProp(target, key, desc) {
+  var defaults = defineProp.defaults || (defineProp.defaults = {
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+
+  var opts = mixin({}, defaults, desc);
+  if (desc.get || desc.set) {
+    delete opts.writable;
+  }
+  return Object.defineProperty(target, key, opts), target;
+};
 
 
 /**
  * Set toString function to object.
  */
-function setObjectName(target, name, protoOnly = false) {
+exports.setObjectName = function setObjectName(target, name, protoOnly = false) {
   var typeName = typeBrackets.join(name);
   var toString = function toString() { return typeName; };
   var proto = target.prototype || (target.prototype = {});
@@ -350,15 +369,13 @@ function setObjectName(target, name, protoOnly = false) {
   }
   return target[name] = proto[name] = target,
          target.toString = proto.toString = toString, target;
-}
-
-exports.setObjectName = setObjectName;
+};
 
 
 /**
  * Return a new function that will called once.
  */
-function once(func, callback = null) {
+exports.once = function once(func, callback = null) {
   var result;
   var called = false;
 
@@ -373,29 +390,7 @@ function once(func, callback = null) {
       callback && callback.apply(this, arguments);
     }
   };
-}
-
-exports.once = once;
-
-
-/**
- * A handy shortcut of Object.defineProperty
- */
-function defineProp(target, key, desc) {
-  var defaults = {
-    writable: true,
-    enumerable: true,
-    configurable: true
-  };
-
-  var opts = mixin({}, defaults, desc);
-  if (desc.get || desc.set) {
-    delete opts.writable;
-  }
-  return Object.defineProperty(target, key, opts), target;
-}
-
-exports.defineProp = defineProp;
+};
 
 
 /**
@@ -403,29 +398,31 @@ exports.defineProp = defineProp;
  */
 define('timer', function factory_Timer() {
   return createConstructor('Timer', {
-    ids: null,
-    init: function() {
-      this.ids = {};
+    private: {
+      _ids: null
     },
-    set: function(func, msec) {
+    init: function() {
+      this._ids = {};
+    },
+    set: function(func, msec = 0) {
       var id = setTimeout(function() {
         try {
           func();
         } finally {
           this.clear(id);
         }
-      }.bind(this), msec || 0);
+      }.bind(this), msec);
 
-      return this.ids[id] = id, this;
+      return this._ids[id] = id, this;
     },
     clear: function(id) {
-      if (id in this.ids) {
-        clearTimeout(id), delete this.ids[id];
+      if (id in this._ids) {
+        clearTimeout(id), delete this._ids[id];
       }
       return this;
     },
     clearAll: function() {
-      var keys = Object.keys(this.ids);
+      var keys = Object.keys(this._ids);
       for (var i = 0, len = keys.length; i < len; i++) {
         this.clear(keys[i]);
       }
@@ -436,7 +433,7 @@ define('timer', function factory_Timer() {
 
 
 /**
- * Generate a unique id from object.
+ * Generate an unique id from object.
  *
  * @example
  *   var o = {};
@@ -558,202 +555,4 @@ define('objectmeta', function factory_ObjectMeta() {
   return ObjectMeta.prototype = createMeta(), ObjectMeta;
 });
 
-
-// ----- Browser/DOM/XPCOM utilities -----
-
-function __(label, params) {
-  var result;
-  try {
-    if (params === void 0) {
-      result = StringBundle.GetStringFromName(label);
-    } else {
-      result = StringBundle.formatStringFromName(label, params, params.length);
-    }
-  } catch (e) {
-    result = '';
-  }
-  return result;
-}
-
-exports.__ = __;
-
-
-function getService(cid, ifc) {
-  var c = Cc['@mozilla.org/' + cid + ';1'];
-  if (!c) {
-    return;
-  }
-  try {
-    return ifc ? c.getService(ifc) : broad(c.getService());
-  } catch (e) {}
-}
-
-exports.getService = getService;
-
-
-/*
- * Functions from tombfix (tombloo fork) utilities.
- * https://github.com/tombfix/core
- * These functions follows tombfix/tombloo license.
- */
-
-function broad(obj, ifcs) {
-  ifcs = ifcs || INTERFACES;
-
-  for (var i = 0, len = ifcs.length; i < len; i++) {
-    try {
-      if (obj instanceof ifcs[i]);
-    } catch (e) {}
-  }
-  return obj;
-}
-
-exports.broad = broad;
-
-
-function wrappedObject(obj) {
-  return obj.wrappedJSObject || obj;
-}
-
-exports.wrappedObject = wrappedObject;
-
-
-function getMostRecentWindow() {
-  return WindowMediator.getMostRecentWindow('navigator:browser');
-}
-
-exports.getMostRecentWindow = getMostRecentWindow;
-
-
-function getPrefType(key) {
-  var branch = getPrefBranch();
-
-  switch (branch.getPrefType(key)) {
-    case branch.PREF_STRING: return 'string';
-    case branch.PREF_BOOL: return 'boolean';
-    case branch.PREF_INT: return 'number';
-    case branch.PREF_INVALID: default: return 'undefined';
-  }
-}
-
-
-function setPrefValue() {
-  var value = Array.pop(arguments);
-  var key = Array.join(arguments, '');
-  var prefType = getPrefType(key);
-  var branch = getPrefBranch();
-  var type = (prefType !== 'undefined') ? prefType : typeof value;
-
-  switch (type) {
-    case 'string': return branch.setCharPref(key, unescape(encodeURIComponent(value)));
-    case 'boolean': return branch.setBoolPref(key, value);
-    case 'number': return branch.setIntPref(key, value);
-  }
-}
-
-
-function getPrefValue() {
-  var key = Array.join(arguments, '');
-  var branch = getPrefBranch();
-
-  switch (branch.getPrefType(key)) {
-    case branch.PREF_STRING: return decodeURIComponent(escape(branch.getCharPref(key)));
-    case branch.PREF_BOOL: return branch.getBoolPref(key);
-    case branch.PREF_INT: return branch.getIntPref(key);
-  }
-}
-
-
-function addTab(url, background) {
-  var d = new Deferred();
-  var tabbrowser = getMostRecentWindow().getBrowser();
-  var tab = tabbrowser.addTab(url);
-  var browser = tab.linkedBrowser;
-
-  if (!background) {
-    tabbrowser.selectedTab = tab;
-  }
-  browser.addEventListener('DOMContentLoaded', function onLoad(event) {
-    browser.removeEventListener('DOMContentLoaded', onLoad, true);
-    d.begin(wrappedObject(event.originalTarget.defaultView));
-  }, true);
-
-  return d;
-}
-
-exports.addTab = addTab;
-
-
-function isEmpty(obj) {
-  for (var i in obj) {
-    return false;
-  }
-  return true;
-}
-
-exports.isEmpty = isEmpty;
-
-
-function clearObject(obj) {
-  for (var p in obj) {
-    delete obj[p];
-  }
-  return obj;
-}
-
-exports.clearObject = clearObject;
-
-
-function log(msg) {
-  try {
-    if (!firebug('log', arguments)) {
-      throw false;
-    }
-  } catch (e) {
-    ConsoleService.logStringMessage('' + msg);
-  }
-  return msg;
-}
-
-exports.log = log;
-
-
-function error(err) {
-  try {
-    if (!firebug('error', arguments)) {
-      throw false;
-    }
-  } catch (e) {
-    Cu.reportError(err);
-  }
-  return err;
-}
-
-exports.error = error;
-
-
-function firebug(method, args) {
-  var win = getMostRecentWindow();
-
-  if (win.FirebugConsole && win.FirebugContext) {
-    try {
-      var console = new win.FirebugConsole(win.FirebugContext, win.content);
-      console[method].apply(console, args);
-      return true;
-    } catch (e) {}
-  }
-
-  // Firebug 1.2~
-  if (win.Firebug && win.Firebug.Console) {
-    try {
-      win.Firebug.Console.logFormatted.call(
-        win.Firebug.Console, Array.slice(args),
-        win.FirebugContext,
-        method
-      );
-      return true;
-    } catch(e) {}
-  }
-  return false;
-}
 
