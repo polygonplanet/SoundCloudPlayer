@@ -10,10 +10,14 @@ const JSSubScriptLoader = Cc['@mozilla.org/moz/jssubscript-loader;1']
                         .getService(Ci.mozIJSSubScriptLoader);
 
 const MODULE_FILES = [
+  'components.js',
   'utils.js',
   'trappers.js',
-  'player.js'
-  //TODO: 途中
+  'test.js'
+  //TODO: 途中...
+  //'async.js',
+  //'models.js',
+  //'player.js'
 ];
 
 const CHROME_DIR  = 'chrome://soundcloudplayer';
@@ -23,10 +27,9 @@ const MODULE_DIR  = CONTENT_DIR + '/modules';
 
 var mixin = function mixin(target, ...args) {
   args.forEach(function(source) {
-    var keys = Object.keys(source);
+    var key, keys = Object.keys(source);
     for (var i = 0, len = keys.length; i < len; i++) {
-      var key = keys[i];
-      target[key] = source[key];
+      key = keys[i], target[key] = source[key];
     }
   });
   return target;
@@ -83,12 +86,13 @@ var Module = mixin(function Module(src) {
 Module.prototype = {
   init: function(src) {
     this.src = src;
-    this.scope = {};
-    this._exports = {};
+    this.scope = Object.create(null);
+    this._exports = Object.create(null);
 
     this.exports = new Proxy(this._exports, {
       set: function(target, name, value) {
-        return target[name] = this.scope[name] = value, true;
+        name in this.scope || (this.scope[name] = value);
+        return target[name] = value, true;
       }.bind(this)
     });
 
@@ -98,13 +102,13 @@ Module.prototype = {
     return this;
   },
   load: function() {
-    JSSubScriptLoader.loadSubScript(this.src), this.scope, 'UTF-8');
+    JSSubScriptLoader.loadSubScript(this.src, this.scope, 'UTF-8');
     return this.exportSymbols();
   },
   exportSymbols: function() {
-    var keys = Object.keys(this._exports);
+    var key, keys = Object.keys(this._exports);
     for (var i = 0, len = keys.length; i < len; i++) {
-      Module.symbols[keys[i]] = this._exports[keys[i]];
+      key = keys[i], Module.symbols[key] = this._exports[key];
     }
     return this;
   }
@@ -129,7 +133,8 @@ Module.defaultSymbols = {
 once(window, 'load', function() {
   try {
     loadModules();
-    Module.require('soundcloudplayer').setup();
+    //TODO:
+    //Module.require('soundcloudplayer').setup();
   } catch (e) {
     (Module.symbols.error || Cu.reportError)(e);
   }
