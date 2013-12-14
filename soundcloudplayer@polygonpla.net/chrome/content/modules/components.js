@@ -26,8 +26,8 @@ exports.broad = function(obj, ifcs = INTERFACES) {
 };
 
 
-exports.getService = function(cid, ifc, suffix = ';1') {
-  var c = Cc['@mozilla.org/' + cid + suffix];
+exports.getService = function(cid, ifc, prefix = '@mozilla.org/', suffix = ';1') {
+  var c = Cc[prefix + cid + suffix];
 
   if (!c) {
     return;
@@ -39,16 +39,11 @@ exports.getService = function(cid, ifc, suffix = ';1') {
 };
 
 
-const ConsoleService = getService('consoleservice', Ci.nsIConsoleService);
-const WindowMediator = getService('appshell/window-mediator', Ci.nsIWindowMediator);
-const PrefService    = getService('preferences-service', null);
-const StringBundle   = getService('intl/stringbundle', Ci.nsIStringBundleService)
-                     .createBundle(CHROME_DIR + '/locale/soundcloudplayer.properties');
-
-exports.ConsoleService = ConsoleService;
-exports.WindowMediator = WindowMediator;
-exports.PrefService    = PrefService;
-exports.StringBundle   = StringBundle;
+exports.ConsoleService = getService('consoleservice', Ci.nsIConsoleService);
+exports.WindowMediator = getService('appshell/window-mediator', Ci.nsIWindowMediator);
+exports.PrefService    = getService('preferences-service', null);
+exports.StringBundle   = getService('intl/stringbundle', Ci.nsIStringBundleService)
+                       .createBundle(CHROME_DIR + '/locale/soundcloudplayer.properties');
 
 
 var getPrefBranch = function() {

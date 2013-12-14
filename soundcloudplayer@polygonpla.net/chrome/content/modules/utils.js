@@ -20,42 +20,54 @@ let (p = Object.prototype) {
 }
 
 
+exports.typeOf = function typeOf(x) {
+  return x === null && 'null' ||
+         x === void 0 && 'undefined' ||
+         toString(x).slice(8, -1).toLowerCase();
+};
+
+
+const NOOP = function(){};
+
+exports.NOOP = NOOP;
+
+
+[false, 0, '', NOOP, {}, /./, Error(), new Date()].forEach(function(value) {
+  let name = typeOf(value);
+  let typeName = typeBrackets.join(name = name[0].toUpperCase() + name.slice(1));
+
+  exports['is' + name] = function(x) {
+    return toString(x) === typeName;
+  };
+});
+
+
+exports.isArray = Array.isArray;
+
+exports.isArrayLike = function isArrayLike(x) {
+  return isArray(x) || !(x == null || x.length - 0 !== x.length);
+};
+
+
+exports.isPrimitive = function isPrimitive(x) {
+  return x !== Object(x);
+};
+
+
+exports.isIterable = function isIterable(x) {
+  // Must use ES6's `iterator`, __iterator__ and Iterator() are deprecated.
+  return !(x == null || typeof x.next !== 'function' || typeof x.iterator !== 'function');
+};
+
+
 {
-  exports.typeOf = function typeOf(x) {
-    return x === null && 'null' ||
-           x === void 0 && 'undefined' ||
-           toString(x).slice(8, -1).toLowerCase();
-  };
+  let noopNames = Object.getOwnPropertyNames(NOOP.prototype);
 
-
-  [false, 0, '', function(){}, {}, /./, new Error(), new Date()].forEach(function(value) {
-    let name = typeOf(value);
-    let typeName = typeBrackets.join(name = name[0].toUpperCase() + name.slice(1));
-
-    exports['is' + name] = function(x) {
-      return toString(x) === typeName;
-    };
-  });
-
-
-  exports.isArray = Array.isArray;
-
-  exports.isArrayLike = function isArrayLike(x) {
-    return isArray(x) || !(x == null || x.length - 0 !== x.length);
-  };
-
-
-  exports.isPrimitive = function isPrimitive(x) {
-    let type;
-    return x == null || !((type = typeof x) === 'object' || type === 'function');
-  };
-
-
-  let isIterableCode = /\[native\s*code\]|StopIteration/i;
-
-  exports.isIterable = function isIterable(x) {
-    return x != null && typeof x.next === 'function' &&
-           isIterableCode.test(toSource(x.next));
+  exports.isConstructor = function isConstructor(x) {
+    return typeof x === 'function' && x.prototype === Object(x.prototype) &&
+           Object.getOwnPropertyNames(x.prototype).filter(function(p) {
+             return !~noopNames.indexOf(p);
+           }).length > 0;
   };
 }
 
@@ -63,7 +75,7 @@ let (p = Object.prototype) {
 /**
  * A shortcut of Object.keys
  */
-exports.keys = Object.keys;
+exports.getKeys = Object.keys;
 
 
 /**
@@ -87,7 +99,16 @@ exports.values = function values(o) {
  * Iterate an iterator
  */
 exports.iterate = function iterate(iter, func, context = null) {
+  if (isGenerator(iter)) {
+    return iterate(iter(), func, context), iter;
+  }
+
+  if (!isIterable(iter) {
+    return;
+  }
+
   try {
+    //FIXME: for-of
     do {
       func.apply(context, Array.concat(iter.next()));
     } while (true);
@@ -111,10 +132,6 @@ exports.forEach = function forEach(target, func, context = null) {
   try {
     if (target.forEach) {
       target.forEach(func, context);
-    } else if (isGenerator(target)) {
-      iterate(target(), func, context);
-    } else if (isIterable(target)) {
-      iterate(target, func, context);
     } else {
       var keys = Object.keys(target);
       for (var i = 0, len = keys.length; i < len; i++) {
@@ -148,6 +165,8 @@ exports.partial = function partial(func, ...rests) {
  */
 exports.callback = function callback(fn) {
   return typeof fn === 'function' ?
+         isConstructor(fn) &&
+         function() { return new (fn.bind.apply(fn, arguments)); }.bind(null, fn) ||
          function() { return fn.apply(this, arguments); } :
          function() { return fn; };
 };
@@ -180,7 +199,7 @@ exports.extend = function extend(...args) {
   var child;
 
   args.forEach(function(parent) {
-    child || (child = typeof parent === 'function' ? function(){} : {});
+    child || (child = typeof parent === 'function' ? callback(parent) : {});
 
     var keys = Object.keys(parent);
     var Ctor = parent.constructor;
@@ -201,8 +220,6 @@ exports.extend = function extend(...args) {
 
       child[key] = val;
     }
-
-    Ctor = null;
   });
   return child;
 };
@@ -253,21 +270,18 @@ exports.createConstructor = function createConstructor(name, Ctor, proto) {
   }, []);
 
   Ctor = (function(Ctor_) {
-    return function() {
-      var args = arguments;
-
+    return function(...args) {
       if (this instanceof Ctor) {
         Ctor_.apply(this, args);
         this.init && this.init.apply(this, args);
         return this;
       }
-
-      return new (Ctor.bind.apply(Ctor, args));
+      return new (Ctor.bind.apply(Ctor, [null].concat(args)));
     };
   }(Ctor || function(){}));
 
-  Ctor.prototype = proto = normalizeProps(proto || {}), proto.constructor = Ctor;
-  name && setObjectName(Ctor, name);
+  proto = mixin({ const: {} }, proto || {}), proto.const.constructor = Ctor;
+  Ctor.prototype = normalizeProps(proto), name && setObjectName(Ctor, name);
   return Ctor;
 };
 
@@ -453,7 +467,7 @@ define('timer', function factory_Timer() {
  * @property {function} ObjectId.get
  *   Get an unique id from object.
  *
- *   @param {object|function|array|*} o
+ *   @param {object} o
  *   @return {string}
  *
  * @property {function} ObjectId.clear
@@ -462,9 +476,8 @@ define('timer', function factory_Timer() {
  *   @return {undefined}
  */
 define('objectid', function factory_ObjectId() {
-  var map = new Map();
-  var wap = new WeakMap();
-  var ids = {};
+  var map = new WeakMap();
+  var ids = Object.create(null);
   var genId = function() {
     // Dot will be avoid conflicts of keywords
     // that occur in very low probability.
@@ -474,16 +487,15 @@ define('objectid', function factory_ObjectId() {
 
   return createObject('ObjectId', {
     get: function(o) {
-      var id, store = isPrimitive(o) ? map : wap;
-
-      if (store.has(o)) {
-        return store.get(o);
+      if (map.has(o)) {
+        return map.get(o);
       }
 
-      return store.set(o, id = genId()), id;
+      var id = genId();
+      return map.set(o, id), id;
     },
     clear: function() {
-      map.clear(), wap.clear(), clearObject(ids);
+      map.clear(), clearObject(ids);
     }
   });
 });
@@ -505,54 +517,35 @@ define('objectid', function factory_ObjectId() {
  *   log(meta2); // { a: "number", len: 3 }
  *   log(meta === meta2); // true
  *
- * @example
- *   // private usage:
- *   var obj = {a: 1, b: 2};
- *   var meta = new ObjectMeta(obj);
- *   meta.size = Object.keys(obj).length;
- *   log(meta.size); // 2
- *   var meta2 = new ObjectMeta(obj);
- *   log(meta2.size); // undefined
- *   log(meta === meta2); // false
- *
  * @name ObjectMeta
- * @constructor
- * @param {object|function|array|*} target
- * @return {object} return a plain object
+ *
+ * @property {function} ObjectMeta.get
+ *   @param {object|function|array|*} target
+ *   @return {object} return a plain object
+ *
+ * @property {function} ObjectMeta.clear
  */
 define('objectmeta', function factory_ObjectMeta() {
-  var globalwm;
+  var name = 'ObjectMeta';
+  var map = new WeakMap();
 
-  var createMeta = function(o) {
-    return setObjectName(o || {}, 'ObjectMeta');
+  var createMeta = function() {
+    return setObjectName({}, name);
   };
 
-  var init = function(target) {
-    if (this instanceof ObjectMeta) {
-      this._wm = new WeakMap();
-      return this._wm.set(target, this.meta = createMeta()), this.meta;
-    }
-    return ObjectMeta.get(target);
-  };
-
-  var ObjectMeta = mixin(createMeta(function ObjectMeta(target) {
-    return init.call(this, target);
-  }), {
+  return createObject(name, {
     get: function(target) {
-      globalwm || (globalwm = new WeakMap());
-
-      if (globalwm.has(target)) {
-        return globalwm.get(target);
+      if (map.has(target)) {
+        return map.get(target);
       }
 
       var meta = createMeta();
-      return globalwm.set(target, meta), meta;
+      return map.set(target, meta), meta;
     },
     clear: function() {
-      globalwm && globalwm.clear();
+      map.clear();
     }
   });
-  return ObjectMeta.prototype = createMeta(), ObjectMeta;
 });
 
 

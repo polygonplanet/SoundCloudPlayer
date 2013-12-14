@@ -106,11 +106,9 @@ Module.prototype = {
     return this.exportSymbols();
   },
   exportSymbols: function() {
-    var key, keys = Object.keys(this._exports);
-    for (var i = 0, len = keys.length; i < len; i++) {
-      key = keys[i], Module.symbols[key] = this._exports[key];
-    }
-    return this;
+    return Object.keys(this._exports).forEach(function(key) {
+      Module.symbols[key] = this._exports[key];
+    }, this), this;
   }
 };
 
