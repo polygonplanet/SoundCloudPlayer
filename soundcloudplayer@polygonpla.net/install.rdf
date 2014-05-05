@@ -2,21 +2,21 @@
   <RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:em="http://www.mozilla.org/2004/em-rdf#">
     <Description about="urn:mozilla:install-manifest">
     <em:id>soundcloudplayer@polygonpla.net</em:id>
-    <em:version>0.0.4</em:version>
+    <em:version>0.0.5</em:version>
     <em:type>2</em:type>
 
     <!-- Firefox -->
     <em:targetApplication>
       <Description>
         <em:id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</em:id>
-        <em:minVersion>23.0</em:minVersion>
-        <em:maxVersion>28.0</em:maxVersion>
+        <em:minVersion>24.0</em:minVersion>
+        <em:maxVersion>32.0</em:maxVersion>
       </Description>
     </em:targetApplication>
 
     <em:name>SoundCloudPlayer</em:name>
     <em:unpack>true</em:unpack>
-    <em:description>Control SoundCloud player from Mozilla Firefox statusbar.</em:description>
+    <em:description>Control SoundCloud player from Mozilla Firefox statusbar/toolbar.</em:description>
     <em:creator>polygon planet</em:creator>
     <em:homepageURL>https://github.com/polygonplanet/SoundCloudPlayer</em:homepageURL>
     <em:iconURL>chrome://soundcloudplayer/skin/soundcloudplayer-icon.png</em:iconURL>

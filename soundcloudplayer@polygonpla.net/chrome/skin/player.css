@@ -142,6 +142,15 @@
   width: 150px;
 }
 
+#nav-bar #soundcloudplayer-control-title,
+#nav-bar #soundcloudplayer-control-title:hover,
+#nav-bar #soundcloudplayer-control-title:active {
+ height: none !important;
+ margin: 8px 4px;
+ max-height: none !important;
+ padding: 2px;
+}
+
 #soundcloudplayer-control-title:hover {
   text-shadow: 0 0 5px rgba(255, 155, 235, 0.9);
 }
@@ -167,6 +176,11 @@
   vertical-align: baseline;
   white-space: nowrap;
   width: inherit;
+}
+
+#nav-bar #soundcloudplayer-control-title #soundcloudplayer-control-title-text {
+ height: none !important;
+ max-height: none !important;
 }
 
 #soundcloudplayer-control-title[disabled="true"] #soundcloudplayer-control-title-text[disabled="true"] {
