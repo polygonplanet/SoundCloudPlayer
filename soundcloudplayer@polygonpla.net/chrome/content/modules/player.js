@@ -70,23 +70,23 @@ var SoundCloudPlayer = {
       prop: 'playbackTitle'
     },
     mute: {
-      className: 'header__volume',
+      className: 'volumeVertical',
       prop: 'headerVolume'
     },
     handle: {
-      className: 'volume__handle',
+      className: 'volumeVertical__handle',
       prop: 'volumeHandle'
     },
     slider: {
-      className: 'volume__slider',
+      className: 'volumeVertical__slider',
       prop: 'volumeSlider'
     }
   },
   elements: null,
 
   //XXX: Fix slider positions
-  VOLUME_SLIDER_POSITIONS: [0, 10, 15, 18, 22, 26, 30, 34, 37, 41, 48, 53],
-  VOLUME_SLIDER_WIDTH: 53,
+  VOLUME_SLIDER_POSITIONS: [68, 60, 54, 48, 42, 36, 28, 23, 18, 12, 0],
+  VOLUME_SLIDER_HEIGHT: 73,
 
   playControl: null,
   skipControlPrevious: null,
@@ -534,7 +534,7 @@ var SoundCloudPlayer = {
     if (this.ignoreVolumeSettings || !this.isPlayControlEnabled()) {
       return;
     }
-    var button = this.headerVolume.querySelector('.volume__togglemute');
+    var button = this.headerVolume.querySelector('.volumeVertical__togglemute');
     if (button) {
       this.click(button);
       return true;
@@ -546,7 +546,7 @@ var SoundCloudPlayer = {
       return;
     }
 
-    var volume = this.headerVolume.querySelector('.volume');
+    var volume = this.headerVolume;
     if (volume && volume.classList.contains('muted')) {
       return true;
     }
@@ -820,7 +820,7 @@ var SoundCloudPlayer = {
       return false;
     }
     return this.volumeSlider != null &&
-           this.volumeSlider.clientWidth === this.VOLUME_SLIDER_WIDTH;
+           this.volumeSlider.clientHeight === this.VOLUME_SLIDER_HEIGHT;
   },
   moveVolumeSliderHandle: function(vol) {
     if (this.ignoreVolumeSettings || !this.isVolumeSliderEnabled() ||
@@ -828,12 +828,12 @@ var SoundCloudPlayer = {
       return false;
     }
 
-    var left =  this.window.jQuery(this.volumeSlider).offset().left;
-    var width = this.VOLUME_SLIDER_POSITIONS[Math.floor(vol * 10)] || 0;
-    var x = Math.round(left + width);
+    var top = this.window.jQuery(this.volumeSlider).offset().top;
+    var height = this.VOLUME_SLIDER_POSITIONS[Math.floor(vol * 10)] || 0;
+    var y = Math.round(top + height);
 
     this.simulateEvent('click', this.volumeSlider, {
-      clientX: x
+      clientY: y
     });
   },
   checkActiveWindow: function() {
@@ -903,8 +903,7 @@ var SoundCloudPlayer = {
   getPlayControlElement: function(doc, className) {
     if (doc && typeof doc.querySelector === 'function') {
       return doc.querySelector([
-               '.header__playbackControl .' + className,
-               '.header__playbackControls .' + className,
+               '.playControls__wrapper .' + className,
                '.' + className
              ].join(','));
     }
