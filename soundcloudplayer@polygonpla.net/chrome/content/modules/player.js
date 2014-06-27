@@ -71,7 +71,7 @@ var SoundCloudPlayer = {
     },
     mute: {
       className: 'volumeVertical',
-      prop: 'headerVolume'
+      prop: 'volumePanel'
     },
     handle: {
       className: 'volumeVertical__handle',
@@ -92,7 +92,7 @@ var SoundCloudPlayer = {
   skipControlPrevious: null,
   skipControlNext: null,
   playbackTitle: null,
-  headerVolume: null,
+  volumePanel: null,
   volumeHandle: null,
   volumeSlider: null,
 
@@ -534,7 +534,7 @@ var SoundCloudPlayer = {
     if (this.ignoreVolumeSettings || !this.isPlayControlEnabled()) {
       return;
     }
-    var button = this.headerVolume.querySelector('.volumeVertical__togglemute');
+    var button = this.volumePanel.querySelector('.volumeVertical__togglemute');
     if (button) {
       this.click(button);
       return true;
@@ -546,7 +546,7 @@ var SoundCloudPlayer = {
       return;
     }
 
-    var volume = this.headerVolume;
+    var volume = this.volumePanel;
     if (volume && volume.classList.contains('muted')) {
       return true;
     }
@@ -828,7 +828,10 @@ var SoundCloudPlayer = {
       return false;
     }
 
-    var top = this.window.jQuery(this.volumeSlider).offset().top;
+    var slider = this.window.jQuery(this.volumeSlider);
+    var clientHeight = this.document.documentElement.clientHeight;
+
+    var top = clientHeight - parseInt(slider.css('bottom'), 10) - slider.outerHeight();
     var height = this.VOLUME_SLIDER_POSITIONS[Math.floor(vol * 10)] || 0;
     var y = Math.round(top + height);
 
@@ -875,7 +878,7 @@ var SoundCloudPlayer = {
     this.skipControlPrevious = null;
     this.skipControlNext = null;
     this.playbackTitle = null;
-    this.headerVolume = null;
+    this.volumePanel = null;
     this.volumeHandle = null;
     this.volumeSlider = null;
   },
