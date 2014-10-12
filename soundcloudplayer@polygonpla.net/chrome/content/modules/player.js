@@ -120,22 +120,18 @@ var SoundCloudPlayer = {
 
   init: function() {
     if (!getPref('playerInstalled')) {
-      var bar = document.getElementById('addon-bar');
-
-      if (bar) {
-        var cur = bar.currentSet;
-        var elems = this.playerElements;
-
-        // Remove the old SoundCloudPlayer version's <toolbarbutton/>
-        Object.keys(elems).forEach(function(id) {
-          if (elems[id].removable && ~cur.indexOf(id)) {
-            cur = cur.split(new RegExp('(?:,|)' + id)).join('');
+      var added = false;
+      ['addon-bar', 'nav-bar'].forEach(function(id) {
+        if (!added) {
+          var bar = document.getElementById(id);
+          if (bar && bar.clientHeight > 0) {
+            this.addPlayer(bar);
+            added = true;
           }
-        });
-        bar.currentSet = cur.concat(',soundcloudplayer-player');
-        bar.setAttribute('currentset', cur);
-        document.persist(bar.id, 'currentset');
+        }
+      }, this);
 
+      if (added) {
         setPref('playerInstalled', true);
       }
     }
@@ -143,6 +139,20 @@ var SoundCloudPlayer = {
     this.addEvents();
     this.addVolumeSliderEvents();
     this.observe();
+  },
+  addPlayer: function(bar) {
+    var cur = bar.currentSet;
+    var elems = this.playerElements;
+
+    // Remove the old SoundCloudPlayer version's <toolbarbutton/>
+    Object.keys(elems).forEach(function(id) {
+      if (elems[id].removable && ~cur.indexOf(id)) {
+        cur = cur.split(new RegExp('(?:,|)' + id)).join('');
+      }
+    });
+    bar.currentSet = cur.concat(',soundcloudplayer-player');
+    bar.setAttribute('currentset', cur);
+    document.persist(bar.id, 'currentset');
   },
   initVolume: function() {
     if (!this.isVolumeInited) {
@@ -631,6 +641,7 @@ var SoundCloudPlayer = {
       return;
     }
 
+    this.setVolume(this.getCurrentVolume());
     this.window.require('lib/play-manager').toggleCurrent({
       userInitiated: true
     });
